@@ -1,0 +1,16 @@
+# What `gcloud builds submit` uploads: source only. Never secrets, builds or dependencies.
+.git
+.gitignore
+.gcloudignore
+**/node_modules/
+**/dist/
+**/.next/
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+.env
+.env.*
+!.env.example
+**/.env.local
+service-account*.json
+*.log

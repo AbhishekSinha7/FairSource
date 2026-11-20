@@ -2,16 +2,35 @@
 //  - ingest is private (Cloud Run IAM): requests carry a Google ID token for its URL.
 //  - the API's internal routes take the shared INTERNAL_TOKEN.
 
+import { execSync } from 'node:child_process';
 import { GoogleAuth } from 'google-auth-library';
 import { API_URL, INGEST_URL, INTERNAL_TOKEN } from './env';
 
 const auth = new GoogleAuth();
 
+let cliToken: { value: string; at: number } | null = null;
+
+/**
+ * On Cloud Run the service account mints an ID token for ingest's URL. On a developer
+ * PC (personal gcloud login) the library can't, so fall back to the gcloud CLI, whose
+ * user identity tokens Cloud Run also accepts (the user needs run.invoker, which owners have).
+ */
+function gcloudIdentityToken(): string {
+  if (cliToken && Date.now() - cliToken.at < 30 * 60 * 1000) return cliToken.value;
+  const value = execSync('gcloud auth print-identity-token', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' ? 'cmd.exe' : '/bin/sh' }).trim();
+  cliToken = { value, at: Date.now() };
+  return value;
+}
+
 async function ingestHeaders(): Promise<Record<string, string>> {
   if (/^http:\/\/(localhost|127\.0\.0\.1)/.test(INGEST_URL)) return {}; // local ingest has no IAM
-  const client = await auth.getIdTokenClient(INGEST_URL);
-  const h = await client.getRequestHeaders();
-  return Object.fromEntries(Object.entries(h as unknown as Record<string, string>));
+  try {
+    const client = await auth.getIdTokenClient(INGEST_URL);
+    const h = await client.getRequestHeaders();
+    return Object.fromEntries(Object.entries(h as unknown as Record<string, string>));
+  } catch {
+    return { authorization: `Bearer ${gcloudIdentityToken()}` };
+  }
 }
 
 export interface ServiceResult<T> {

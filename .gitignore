@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 node_modules/
 dist/
 .next/
@@ -12,7 +11,8 @@ __pycache__/
 .pytest_cache/
 service-account*.json
 .DS_Store
-=======
+
+# --- Standard Node.js ignores (from the GitHub template) ---
 # Logs
 logs
 *.log
@@ -170,8 +170,3 @@ vite.config.ts.timestamp-*
 .nx/cache
 .nx/workspace-data
 .nx/migrate-runs
->>>>>>> 5aea082e0966bfb783940023d19a88d8dd1425ff
-
-# Internal planning docs
-Build Plan Licensed Content Layer for AI.md
-Technical Implementation Licensed Content Layer for AI.md
