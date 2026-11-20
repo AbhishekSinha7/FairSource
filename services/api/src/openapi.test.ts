@@ -130,4 +130,16 @@ describe('OpenAPI spec', () => {
     const internal = await app.inject({ method: 'OPTIONS', url: '/internal/restamp' });
     assert.equal(internal.headers['access-control-allow-origin'], undefined);
   });
+
+  test('API responses are never cached (Firebase Hosting CDN)', async () => {
+    const { app, headers } = setup();
+    const res = await app.inject({ method: 'POST', url: '/v1/search', headers, payload: { query: 'metro' } });
+    assert.equal(res.headers['cache-control'], 'no-store');
+  });
+
+  test('the spec can carry the real public address for the API and MCP', () => {
+    const s = openApiSpec({ apiBaseUrl: 'https://ask123.web.app', mcpUrl: 'https://ask123.web.app/mcp' }) as { servers: Array<{ url: string }>; info: { description: string } };
+    assert.equal(s.servers[0]!.url, 'https://ask123.web.app');
+    assert.match(s.info.description, /https:\/\/ask123\.web\.app\/mcp/);
+  });
 });

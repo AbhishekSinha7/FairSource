@@ -3,6 +3,7 @@
 // when the API isn't running. Opened in a new tab from the dashboard.
 
 import { openApiSpec } from '@fairsource/shared';
+import { publicUrls } from '@/lib/config';
 
 export const dynamic = 'force-static';
 
@@ -46,8 +47,7 @@ const CSS = `
 `;
 
 export function GET() {
-  const domain = process.env.NEXT_PUBLIC_FAIRSOURCE_DOMAIN;
-  const spec = openApiSpec({ apiBaseUrl: domain ? `https://api.${domain}` : undefined });
+  const spec = openApiSpec(publicUrls());
   // Safe to embed in a <script>: no "</script>" can survive the escaping.
   const json = JSON.stringify(spec).replace(/</g, '\\u003c');
   const config = JSON.stringify({

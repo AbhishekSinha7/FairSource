@@ -9,6 +9,10 @@
 //
 // A publisher gets licence v1 (RAG, India, $0.002 per 1,000 tokens) and an Uploads source.
 // Running it again for the same org is safe: existing documents are kept; the user's claims are updated.
+// To link another person to an existing organisation, run it again with the same --id and their --email.
+//
+// Remove someone's access (their role, and every session they're signed in with):
+//   npx tsx infra/create-org.ts --project fs-dev --unlink --email old@example.com
 
 import { newSource } from '@fairsource/shared';
 import { getApps, initializeApp } from 'firebase-admin/app';
@@ -27,6 +31,7 @@ const { values: a } = parseArgs({
     city: { type: 'string' },
     languages: { type: 'string', default: 'mr,hi,en' },
     quota: { type: 'string', default: '10000000' },
+    unlink: { type: 'boolean', default: false },
   },
 });
 
@@ -39,6 +44,23 @@ function need(v: string | undefined, flag: string): string {
 }
 
 const project = need(a.project, 'project');
+
+if (a.unlink) {
+  const target = need(a.email, 'email').toLowerCase();
+  const unlinkAuth = getAuth(getApps()[0] ?? initializeApp({ projectId: project }));
+  let user;
+  try {
+    user = await unlinkAuth.getUserByEmail(target);
+  } catch {
+    console.log(`${target} has no FairSource account; nothing to remove.`);
+    process.exit(0);
+  }
+  const before = user.customClaims ?? {};
+  await unlinkAuth.setCustomUserClaims(user.uid, null);
+  await unlinkAuth.revokeRefreshTokens(user.uid); // ends their dashboard sessions now (sessions are verified with revocation checks)
+  console.log(`${target} removed from ${before.role ?? 'no role'} ${before.orgId ?? ''} and signed out. The organisation and its data are unchanged.`);
+  process.exit(0);
+}
 const role = need(a.role, 'role');
 if (role !== 'publisher' && role !== 'buyer') need(undefined, 'role publisher|buyer');
 const id = need(a.id, 'id');

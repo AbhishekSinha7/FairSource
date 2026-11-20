@@ -8,7 +8,9 @@ substitutions:
 steps:
   - name: gcr.io/cloud-builders/docker
     entrypoint: bash
-    args: ['-c', 'docker build -f "$_DOCKERFILE" $_BUILD_ARGS -t "$_IMAGE" .']
+    # Also tagged :latest, so `SKIP_BUILD=1 bash infra/deploy.sh` can redeploy without rebuilding.
+    # Cloud Build substitutes $_IMAGE into the text; $$ passes a literal $ to bash for IMG.
+    args: ['-c', 'IMG="$_IMAGE"; docker build -f "$_DOCKERFILE" $_BUILD_ARGS -t "$$IMG" -t "$${IMG%:*}:latest" . && docker push "$${IMG%:*}:latest"']
 images: ['$_IMAGE']
 options:
   logging: CLOUD_LOGGING_ONLY

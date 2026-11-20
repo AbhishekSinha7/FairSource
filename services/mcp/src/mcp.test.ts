@@ -75,5 +75,6 @@ describe('MCP server', () => {
     await assert.rejects(connect());
     const res = await fetch(mcpUrl, { method: 'GET' });
     assert.equal(res.status, 405);
+    assert.equal(res.headers.get('cache-control'), 'no-store');
   });
 });

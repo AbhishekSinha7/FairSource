@@ -1,0 +1,11 @@
+{
+  "hosting": {
+    "public": "infra/hosting",
+    "ignore": ["**/.*", "README.md"],
+    "rewrites": [
+      { "source": "/v1/**", "run": { "serviceId": "api", "region": "asia-south1" } },
+      { "source": "/mcp", "run": { "serviceId": "mcp", "region": "asia-south1" } },
+      { "source": "**", "run": { "serviceId": "web", "region": "asia-south1" } }
+    ]
+  }
+}

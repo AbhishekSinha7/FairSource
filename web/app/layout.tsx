@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 import { Shell, type ShellIdentity } from '@/components/Shell';
-import { MODE_LOCKED } from '@/lib/server/env';
-import { isLiveMode } from '@/lib/server/mode';
+import { isLiveMode, modeSwitchAvailable } from '@/lib/server/mode';
 import { currentSession, orgInfo } from '@/lib/server/session';
 import './globals.css';
 
@@ -33,7 +32,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         <link rel="stylesheet" href={FONTS} />
       </head>
       <body className="antialiased">
-        <Shell identity={await identity(live)} live={live} modeSwitch={!MODE_LOCKED}>
+        <Shell identity={await identity(live)} live={live} modeSwitch={await modeSwitchAvailable()}>
           {children}
         </Shell>
       </body>

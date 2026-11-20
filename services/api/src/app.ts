@@ -71,6 +71,7 @@ export function buildApp(d: Deps) {
   // tokens, not cookies, so any origin is safe; internal headers are not allowed cross-origin.
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/v1/') && !req.url.startsWith('/openapi.json')) return;
+    reply.header('cache-control', 'no-store'); // never cached by Firebase Hosting's CDN
     reply.header('access-control-allow-origin', '*');
     reply.header('access-control-allow-headers', 'authorization, content-type');
     reply.header('access-control-allow-methods', 'GET, POST, OPTIONS');

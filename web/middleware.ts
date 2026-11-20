@@ -14,10 +14,12 @@ function liveMode(req: NextRequest): boolean {
 export function middleware(req: NextRequest) {
   if (!liveMode(req)) return NextResponse.next();
   if (req.cookies.has('__session')) return NextResponse.next();
-  const url = req.nextUrl.clone();
-  url.pathname = '/login';
-  url.search = '';
-  return NextResponse.redirect(url);
+  // Middleware needs an absolute URL. Build it from the host the visitor used: behind
+  // Firebase Hosting the request's own Host is the Cloud Run address, and redirecting
+  // there would send people off the shared address.
+  const host = req.headers.get('x-forwarded-host')?.split(',')[0]?.trim() || req.headers.get('host') || req.nextUrl.host;
+  const proto = req.headers.get('x-forwarded-proto')?.split(',')[0]?.trim() || req.nextUrl.protocol.replace(':', '');
+  return NextResponse.redirect(new URL('/login', `${proto}://${host}`));
 }
 
 export const config = {

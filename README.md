@@ -321,6 +321,19 @@ The dashboard can also run on a PC against the deployed services: `web/.env.loca
 
 **Checked locally:** the standalone dashboard server runs exactly as the container does (all pages, `/docs`, assets, sign-in guard); scripts parse; type-checks pass. **Not yet run:** the Cloud Build images and the deploy itself. The first run on the new account is the test; paste any failing build log.
 
+### 21. One address for everything (20 Nov)
+
+Firebase Hosting (`firebase.json`) puts the dashboard, API and MCP server on one address, `https://<project>.web.app`: `/v1/**` goes to `api`, `/mcp` to `mcp`, everything else (dashboard, `/docs`, `/openapi.json`) to `web`. `infra/deploy.sh` publishes it at the end (`HOSTING=1`, the default; `PUBLIC_URL` to override). Free, HTTPS, CDN, custom domain possible later, and `web.app` is already authorized for Google sign-in.
+
+| Choice | Why |
+| --- | --- |
+| API and MCP responses send `Cache-Control: no-store` | Hosting's CDN must never cache licensed results or usage |
+| Snippets, docs and the spec show the shared address (`NEXT_PUBLIC_FAIRSOURCE_URL`, a build setting of the dashboard) | Buyers copy one URL |
+| On the shared address the dashboard is Live only and the Demo/Live switch is hidden; the switch still works on the direct `run.app` address | Hosting forwards only the `__session` cookie, so the switch's cookie never arrives |
+| The sign-in redirect is built from `X-Forwarded-Host` | Otherwise it would send visitors from `web.app` to the raw Cloud Run address. A relative redirect isn't possible: Next.js middleware requires absolute URLs (tried; it returned 500) |
+
+**Checked locally:** the standalone dashboard with the shared address (redirects through a simulated Hosting request stay on `web.app`; direct and demo access unchanged; docs and MCP snippet show the shared URL), 69 tests passing (no-store headers, spec addresses). **Not yet run:** the real Firebase Hosting deploy. Hosting needs a one-time `firebase login --no-localhost` in Cloud Shell if the deploy step asks for it.
+
 ---
 
 ## Repository layout

@@ -4,8 +4,10 @@
 // so change both together.
 
 export interface OpenApiOptions {
-  /** e.g. "https://api.fairsource.example"; shown first in the server list. */
+  /** e.g. "https://ask123.web.app"; shown first in the server list. */
   apiBaseUrl?: string;
+  /** e.g. "https://ask123.web.app/mcp"; shown in the MCP example. */
+  mcpUrl?: string;
 }
 
 const ISO_LANG = { type: 'string', pattern: '^[a-z]{2,3}$', description: 'ISO 639-1 language code', examples: ['mr'] };
@@ -55,7 +57,7 @@ const ERRORS = {
   }),
 };
 
-const DESCRIPTION = `
+const description = (mcpUrl: string) => `
 FairSource serves **licensed, attributed content** from Indian and other non-English publishers to AI applications. Every result is checked against the publisher's licence at request time, and every use is metered and paid to the publisher.
 
 ## Authentication
@@ -97,7 +99,7 @@ The same content is available as an MCP tool, \`search_licensed_content\`, over 
   "mcpServers": {
     "fairsource": {
       "type": "http",
-      "url": "https://mcp.<domain>/mcp",
+      "url": "${mcpUrl}",
       "headers": { "Authorization": "Bearer fs_xxxxxxxx_..." }
     }
   }
@@ -118,7 +120,7 @@ export function openApiSpec(opts: OpenApiOptions = {}): Record<string, unknown> 
       title: 'FairSource API',
       version: '1.0.0',
       summary: 'Licensed, attributed content for AI, with every use metered and paid to the publisher.',
-      description: DESCRIPTION,
+      description: description(opts.mcpUrl ?? 'https://mcp.<domain>/mcp'),
       contact: { name: 'FairSource' },
     },
     servers,

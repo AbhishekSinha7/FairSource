@@ -19,6 +19,10 @@ ADMIN_EMAIL=${ADMIN_EMAIL:-}
 ORG_ID=${ORG_ID:-pub_example}
 ORG_NAME=${ORG_NAME:-Example Marathi Daily}
 MIN_API_INSTANCES=${MIN_API_INSTANCES:-0}
+# One public address for the dashboard, API (/v1) and MCP (/mcp), served by Firebase Hosting.
+PUBLIC_URL=${PUBLIC_URL:-https://$PROJECT.web.app}
+HOSTING=${HOSTING:-1}
+FIREBASE_TOOLS=firebase-tools@15.35.0
 cd "$(dirname "$0")/.."
 
 say() { printf '\n== %s\n' "$*"; }
@@ -68,6 +72,11 @@ say "Cloud Build permissions"
 BUILD_SA="$PROJECT_NUMBER-compute@developer.gserviceaccount.com"
 for role in roles/artifactregistry.writer roles/logging.logWriter roles/storage.objectViewer; do bind "serviceAccount:$BUILD_SA" "$role"; done
 
+if [ "${SKIP_BUILD:-0}" = 1 ]; then
+  # Redeploy and re-wire with the images from the last build (each build also tags :latest).
+  TAG=latest
+  say "Skipping the build: deploying the :latest images"
+else
 say "Building 5 images in Cloud Build (about 5-10 minutes; logs in console > Cloud Build)"
 build() { # name dockerfile build-args
   gcloud builds submit . --config infra/build-image.yaml --region="$REGION" --quiet \
@@ -76,7 +85,7 @@ build() { # name dockerfile build-args
 declare -A PIDS
 for svc in ingest api mcp; do build "$svc" services/Dockerfile.node "--build-arg SERVICE=$svc" & PIDS[$svc]=$!; done
 build worker services/worker/Dockerfile "" & PIDS[worker]=$!
-build web web/Dockerfile "--build-arg NEXT_PUBLIC_FIREBASE_API_KEY=$FIREBASE_API_KEY --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$PROJECT.firebaseapp.com --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=$PROJECT" & PIDS[web]=$!
+build web web/Dockerfile "--build-arg NEXT_PUBLIC_FIREBASE_API_KEY=$FIREBASE_API_KEY --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$PROJECT.firebaseapp.com --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID=$PROJECT --build-arg NEXT_PUBLIC_FAIRSOURCE_URL=$PUBLIC_URL" & PIDS[web]=$!
 FAILED=""
 for svc in "${!PIDS[@]}"; do
   if wait "${PIDS[$svc]}"; then echo "  built $svc"; else echo "  FAILED $svc (see /tmp/fs-build-$svc.log)"; FAILED="$FAILED $svc"; fi
@@ -85,6 +94,7 @@ if [ -n "$FAILED" ]; then
   echo; echo "Build failed for:$FAILED"
   for svc in $FAILED; do echo "--- last lines of /tmp/fs-build-$svc.log"; tail -25 "/tmp/fs-build-$svc.log"; done
   exit 1
+fi
 fi
 
 say "Deploying to Cloud Run ($REGION)"
@@ -104,7 +114,7 @@ deploy api --image="$REPO/api:$TAG" --service-account="$(SA api)" --allow-unauth
   --min-instances="$MIN_API_INSTANCES" --max-instances=20 --concurrency=40 \
   --set-env-vars="$COMMON_ENV$GEMINI_ENV" --set-secrets="INTERNAL_TOKEN=internal-token:latest${GEMINI_SECRET:+,$GEMINI_SECRET}"
 INGEST_URL=$(url ingest); WORKER_URL=$(url worker); API_URL=$(url api)
-gcloud run services update api --region="$REGION" --update-env-vars="PUBLIC_API_URL=$API_URL" --quiet >/dev/null
+gcloud run services update api --region="$REGION" --update-env-vars="PUBLIC_API_URL=$PUBLIC_URL" --quiet >/dev/null
 deploy mcp --image="$REPO/mcp:$TAG" --service-account="$(SA mcp)" --allow-unauthenticated \
   --max-instances=10 --set-env-vars="API_BASE=$API_URL"
 deploy web --image="$REPO/web:$TAG" --service-account="$(SA web)" --allow-unauthenticated \
@@ -144,13 +154,31 @@ job run-sources "*/5 * * * *" /internal/run-due
 job sweep-sources "30 21 * * *" /internal/sweep
 
 say "Wiring: uploads -> ingest (Eventarc)"
-if ! quiet gcloud eventarc triggers describe upload-finalized --location="$REGION"; then
-  gcloud eventarc triggers create upload-finalized --location="$REGION" \
-    --destination-run-service=ingest --destination-run-region="$REGION" --destination-run-path=/internal/upload-finalized \
-    --event-filters=type=google.cloud.storage.object.v1.finalized --event-filters=bucket="$PROJECT-raw" \
-    --service-account="$(SA scheduler)" >/dev/null
+# On a new project, Eventarc's own service agent gets its permissions a few minutes
+# after first use: create it, grant its role, and retry until Google has caught up.
+gcloud beta services identity create --service=eventarc.googleapis.com --project="$PROJECT" >/dev/null 2>&1 || true
+bind "serviceAccount:service-$PROJECT_NUMBER@gcp-sa-eventarc.iam.gserviceaccount.com" roles/eventarc.serviceAgent
+# Cloud Storage's service agent publishes the "object finalized" events (setup.sh grants this
+# too, but on a fresh project the agent may not have existed yet when it ran).
+GCS_AGENT=$(gcloud storage service-agent --project="$PROJECT")
+for attempt in 1 2 3 4 5; do
+  if quiet gcloud projects add-iam-policy-binding "$PROJECT" --condition=None --member="serviceAccount:$GCS_AGENT" --role=roles/pubsub.publisher; then break; fi
+  echo "  Cloud Storage service agent not ready yet, retrying in 20 s ($attempt/5)"; sleep 20
+done
+if quiet gcloud eventarc triggers describe upload-finalized --location="$REGION"; then
+  echo "  upload-finalized already exists"
+else
+  for attempt in 1 2 3 4 5 6 7 8; do
+    if out=$(gcloud eventarc triggers create upload-finalized --location="$REGION" \
+      --destination-run-service=ingest --destination-run-region="$REGION" --destination-run-path=/internal/upload-finalized \
+      --event-filters=type=google.cloud.storage.object.v1.finalized --event-filters=bucket="$PROJECT-raw" \
+      --service-account="$(SA scheduler)" 2>&1); then
+      echo "  upload-finalized on gs://$PROJECT-raw"; break
+    fi
+    if [ "$attempt" = 8 ]; then echo "$out" >&2; echo "  Eventarc still not ready: re-run with SKIP_BUILD=1 in a few minutes" >&2; break; fi
+    echo "  Eventarc permissions still propagating, retrying in 45 s ($attempt/8)"; sleep 45
+  done
 fi
-echo "  upload-finalized on gs://$PROJECT-raw"
 
 if [ -n "$ADMIN_EMAIL" ]; then
   say "Linking $ADMIN_EMAIL as publisher $ORG_ID"
@@ -160,6 +188,35 @@ if [ -n "$ADMIN_EMAIL" ]; then
     --id "$ORG_ID" --name "$ORG_NAME" --email "$ADMIN_EMAIL" --city Pune --languages mr,hi,en
 fi
 
+HOSTED=0
+if [ "$HOSTING" = 1 ]; then
+  say "Firebase Hosting: one address for everything ($PUBLIC_URL)"
+  HOSTING_DIR=$(mktemp -d)
+  sed -e "s#\"region\": \"asia-south1\"#\"region\": \"$REGION\"#g" -e "s#\"public\": \"infra/hosting\"#\"public\": \"$PWD/infra/hosting\"#" firebase.json >"$HOSTING_DIR/firebase.json"
+  if npx --yes "$FIREBASE_TOOLS" deploy --only hosting --project "$PROJECT" --config "$HOSTING_DIR/firebase.json" --non-interactive; then
+    HOSTED=1
+  else
+    echo
+    echo "  Firebase Hosting wasn't deployed. Usually it needs a one-time Firebase login in Cloud Shell:"
+    echo "    npx --yes $FIREBASE_TOOLS login --no-localhost"
+    echo "  then publish just the routing (about a minute):"
+    echo "    npx --yes $FIREBASE_TOOLS deploy --only hosting --project $PROJECT"
+  fi
+fi
+
+if [ "$HOSTED" = 1 ]; then
+cat <<EOF
+
+== Done: one address for everything
+  Dashboard  $PUBLIC_URL
+  API        $PUBLIC_URL/v1      (docs: $PUBLIC_URL/docs)
+  MCP        $PUBLIC_URL/mcp
+  ($PUBLIC_URL is already authorized for Google sign-in.)
+
+  Direct Cloud Run addresses (the dashboard's Demo/Live switch works only here):
+  $WEB_URL   $API_URL   $MCP_URL
+EOF
+else
 cat <<EOF
 
 == Done
@@ -173,3 +230,4 @@ Last step, once: Firebase console > Authentication > Settings > Authorized domai
   ${WEB_URL#https://}
 Then open the dashboard, choose Live and sign in with Google.
 EOF
+fi

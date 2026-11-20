@@ -12,6 +12,11 @@ export function buildApp(opts: { apiBase: string; fetchFn?: FetchFn; log?: (e: R
   const app = Fastify({ logger: false, bodyLimit: 256 * 1024 });
   const log = opts.log ?? (() => undefined);
 
+  // Tool results are per buyer and metered: never cached by Firebase Hosting's CDN.
+  app.addHook('onSend', async (_req, reply) => {
+    reply.header('cache-control', 'no-store');
+  });
+
   app.get('/health', async () => ({ ok: true, service: 'mcp', schemaVersion: SCHEMA_VERSION }));
 
   app.post('/mcp', async (req, reply) => {

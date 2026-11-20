@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { DataModeSwitch } from '@/components/DataModeSwitch';
-import { LIVE_CONFIGURED, MODE_LOCKED } from '@/lib/server/env';
-import { isLiveMode } from '@/lib/server/mode';
+import { LIVE_CONFIGURED } from '@/lib/server/env';
+import { isLiveMode, modeSwitchAvailable } from '@/lib/server/mode';
 import { currentSession } from '@/lib/server/session';
 import { LoginButton } from './LoginButton';
 
@@ -63,7 +63,7 @@ export default async function LoginPage() {
             </ol>
           </>
         )}
-        {!MODE_LOCKED && (
+        {(await modeSwitchAvailable()) && (
           <div className="mt-8 border-t border-line pt-5">
             <DataModeSwitch live tone="light" />
           </div>
