@@ -323,7 +323,7 @@ The dashboard can also run on a PC against the deployed services: `web/.env.loca
 
 ### 21. One address for everything (20 Nov)
 
-Firebase Hosting (`firebase.json`) puts the dashboard, API and MCP server on one address, `https://<project>.web.app`: `/v1/**` goes to `api`, `/mcp` to `mcp`, everything else (dashboard, `/docs`, `/openapi.json`) to `web`. `infra/deploy.sh` publishes it at the end (`HOSTING=1`, the default; `PUBLIC_URL` to override). Free, HTTPS, CDN, custom domain possible later, and `web.app` is already authorized for Google sign-in.
+Firebase Hosting (`firebase.json`) puts the dashboard, API and MCP server on one address, `https://<project>.web.app`: `/v1/**` goes to `api`, `/mcp` to `mcp`, everything else (dashboard, `/docs`, `/openapi.json`) to `web`. `infra/deploy.sh` publishes it at the end (`HOSTING=1`, the default; `PUBLIC_URL` to override). For a nicer name, `HOSTING_SITE=fairsource` creates an extra Hosting site and serves everything at `https://fairsource.web.app` instead (site names are unique across Firebase; this one had no site on 20 Nov). An extra site's domain must be added once to Firebase Auth's authorized domains. Free, HTTPS, CDN, custom domain possible later, and `web.app` is already authorized for Google sign-in.
 
 | Choice | Why |
 | --- | --- |

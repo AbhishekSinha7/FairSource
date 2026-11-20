@@ -6,6 +6,8 @@
 #   FIREBASE_API_KEY=AIza...            # Firebase console -> Project settings -> Your apps -> Web app
 #   GEMINI_API_KEY=...                  # optional; without it Gemini runs on Vertex AI (location "global")
 #   ADMIN_EMAIL=you@gmail.com           # optional; links this Google account as a publisher
+#   HOSTING_SITE=fairsource             # optional; serve everything at https://fairsource.web.app
+#                                       # (default: https://<PROJECT>.web.app)
 #   bash infra/deploy.sh
 #
 # Safe to run again: it rebuilds, redeploys and updates the wiring in place.
@@ -20,7 +22,8 @@ ORG_ID=${ORG_ID:-pub_example}
 ORG_NAME=${ORG_NAME:-Example Marathi Daily}
 MIN_API_INSTANCES=${MIN_API_INSTANCES:-0}
 # One public address for the dashboard, API (/v1) and MCP (/mcp), served by Firebase Hosting.
-PUBLIC_URL=${PUBLIC_URL:-https://$PROJECT.web.app}
+HOSTING_SITE=${HOSTING_SITE:-$PROJECT}
+PUBLIC_URL=${PUBLIC_URL:-https://$HOSTING_SITE.web.app}
 HOSTING=${HOSTING:-1}
 FIREBASE_TOOLS=firebase-tools@15.35.0
 cd "$(dirname "$0")/.."
@@ -192,8 +195,22 @@ HOSTED=0
 if [ "$HOSTING" = 1 ]; then
   say "Firebase Hosting: one address for everything ($PUBLIC_URL)"
   HOSTING_DIR=$(mktemp -d)
-  sed -e "s#\"region\": \"asia-south1\"#\"region\": \"$REGION\"#g" -e "s#\"public\": \"infra/hosting\"#\"public\": \"$PWD/infra/hosting\"#" firebase.json >"$HOSTING_DIR/firebase.json"
-  if npx --yes "$FIREBASE_TOOLS" deploy --only hosting --project "$PROJECT" --config "$HOSTING_DIR/firebase.json" --non-interactive; then
+  sed -e "s#\"region\": \"asia-south1\"#\"region\": \"$REGION\"#g" -e "s#\"public\": \"infra/hosting\"#\"public\": \"$PWD/infra/hosting\"#" \
+    -e "s#\"hosting\": {#\"hosting\": {\n    \"site\": \"$HOSTING_SITE\",#" firebase.json >"$HOSTING_DIR/firebase.json"
+  SITE_OK=1
+  if [ "$HOSTING_SITE" != "$PROJECT" ]; then
+    # An extra site such as fairsource.web.app. Site names are unique across all of Firebase.
+    if out=$(npx --yes "$FIREBASE_TOOLS" hosting:sites:create "$HOSTING_SITE" --project "$PROJECT" --non-interactive 2>&1); then
+      echo "  created site $HOSTING_SITE.web.app"
+    elif grep -qi 'already exists' <<<"$out" && npx --yes "$FIREBASE_TOOLS" hosting:sites:list --project "$PROJECT" 2>/dev/null | grep -q "$HOSTING_SITE"; then
+      echo "  site $HOSTING_SITE.web.app already in this project"
+    else
+      echo "$out" | tail -5
+      echo "  Couldn't create $HOSTING_SITE.web.app (the name may belong to someone else). Pick another HOSTING_SITE and re-run."
+      SITE_OK=0
+    fi
+  fi
+  if [ "$SITE_OK" = 1 ] && npx --yes "$FIREBASE_TOOLS" deploy --only hosting --project "$PROJECT" --config "$HOSTING_DIR/firebase.json" --non-interactive; then
     HOSTED=1
   else
     echo
@@ -211,7 +228,7 @@ cat <<EOF
   Dashboard  $PUBLIC_URL
   API        $PUBLIC_URL/v1      (docs: $PUBLIC_URL/docs)
   MCP        $PUBLIC_URL/mcp
-  ($PUBLIC_URL is already authorized for Google sign-in.)
+$( [ "$HOSTING_SITE" = "$PROJECT" ] && echo "  ($PUBLIC_URL is already authorized for Google sign-in.)" || echo "  One step left: Firebase console > Authentication > Settings > Authorized domains > Add $HOSTING_SITE.web.app" )
 
   Direct Cloud Run addresses (the dashboard's Demo/Live switch works only here):
   $WEB_URL   $API_URL   $MCP_URL
