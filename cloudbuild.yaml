@@ -1,0 +1,51 @@
+# One trigger per service, each with _SERVICE set and an "included files" filter, e.g.
+#   gcloud builds triggers create github --name=deploy-api --repo-owner=<owner> --repo-name=<repo> \
+#     --branch-pattern='^main$' --build-config=cloudbuild.yaml \
+#     --included-files='services/api/**,packages/shared/**' --substitutions=_SERVICE=api
+substitutions:
+  _SERVICE: api
+  _REGION: asia-south1
+  _IMAGE: ${_REGION}-docker.pkg.dev/${PROJECT_ID}/services/${_SERVICE}:${SHORT_SHA}
+
+steps:
+  - id: test-ts
+    name: node:22
+    entrypoint: bash
+    args: ['-c', 'if [ "$_SERVICE" != worker ]; then npm ci && npm test; fi']
+
+  - id: test-py
+    name: python:3.12-slim
+    entrypoint: bash
+    args: ['-c', 'if [ "$_SERVICE" = worker ]; then cd services/worker && pip install -q ".[dev]" && pytest -q; fi']
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        if [ "$_SERVICE" = worker ]; then
+          docker build -f services/worker/Dockerfile -t "$_IMAGE" .
+        else
+          docker build -f services/Dockerfile.node --build-arg SERVICE="$_SERVICE" -t "$_IMAGE" .
+        fi
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ['push', '${_IMAGE}']
+
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_IMAGE}
+      - --region=${_REGION}
+      - --service-account=sa-${_SERVICE}@${PROJECT_ID}.iam.gserviceaccount.com
+      - --set-env-vars=GOOGLE_CLOUD_PROJECT=${PROJECT_ID},RAW_BUCKET=${PROJECT_ID}-raw,CLEAN_BUCKET=${PROJECT_ID}-clean
+
+images: ['${_IMAGE}']
+options:
+  logging: CLOUD_LOGGING_ONLY

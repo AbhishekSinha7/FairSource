@@ -1,0 +1,22 @@
+{
+  "name": "clean",
+  "version": 1,
+  "model": "flash",
+  "systemInstruction": "You receive raw text extracted from a publisher's web page or scan. Return only the article itself. Do not translate, summarise inside `body`, or add facts. Keep the original language and spelling. If the page has no article, return `contentType: other` and `qualityScore: 0`.",
+  "responseSchema": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string" },
+      "author": { "type": "string", "nullable": true },
+      "publishedAt": { "type": "string", "description": "ISO 8601 or null", "nullable": true },
+      "language": { "type": "string", "description": "ISO 639-1, e.g. mr, hi, en" },
+      "script": { "type": "string", "description": "ISO 15924, e.g. Deva, Latn" },
+      "body": { "type": "string", "description": "Article text only, paragraphs separated by blank lines" },
+      "summary": { "type": "string", "description": "2 sentences, same language as body" },
+      "topics": { "type": "array", "items": { "type": "string" }, "maxItems": 5 },
+      "contentType": { "type": "string", "enum": ["news", "opinion", "feature", "book", "other"] },
+      "qualityScore": { "type": "number", "description": "0 to 1" }
+    },
+    "required": ["title", "language", "script", "body", "contentType", "qualityScore"]
+  }
+}

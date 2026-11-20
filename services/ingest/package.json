@@ -1,0 +1,24 @@
+{
+  "name": "@fairsource/ingest",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test": "node --test --import tsx src/test/*.test.ts"
+  },
+  "dependencies": {
+    "@fairsource/shared": "*",
+    "@google-cloud/pubsub": "^4.9.0",
+    "@google-cloud/storage": "^7.14.0",
+    "fast-xml-parser": "^4.5.0",
+    "fastify": "^5.2.0",
+    "fflate": "^0.8.2",
+    "firebase-admin": "^13.0.0",
+    "zod": "^3.24.0"
+  }
+}

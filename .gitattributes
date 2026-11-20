@@ -1,0 +1,8 @@
+# Keep Unix line endings where Linux tools read the files (Cloud Shell, Docker,
+# Cloud Build), whatever core.autocrlf is set to on Windows.
+*.sh     text eol=lf
+*.sql    text eol=lf
+*.rules  text eol=lf
+infra/** text eol=lf
+Dockerfile*   text eol=lf
+*.yaml   text eol=lf

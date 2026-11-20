@@ -1,0 +1,73 @@
+@import 'tailwindcss';
+
+/* Fonts are loaded from Google Fonts in app/layout.tsx. Devanagari falls back to Noto Sans Devanagari. */
+@theme {
+  --font-sans: 'Inter', 'Noto Sans Devanagari', system-ui, sans-serif;
+  --font-display: 'Space Grotesk', 'Noto Sans Devanagari', 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Design tokens from the dashboard mockups (18 Nov). */
+@theme {
+  --color-page: #f6f5f1;          /* warm off-white main area */
+  --color-card: #ffffff;
+  --color-line: #e7e5df;          /* card borders, table rules */
+  --color-subtle: #f3f2ee;        /* inset tiles, hover rows */
+  --color-ink: #17181c;           /* titles, body */
+  --color-muted: #6b6b70;         /* descriptions, labels */
+  --color-toggle-off: #d6d3ca;
+
+  --color-side: #18191d;          /* sidebar */
+  --color-side-raised: #2a2c33;   /* active nav pill, segmented track */
+  --color-side-muted: #9a9ba3;
+
+  --color-panel: #18191d;         /* dark hero and code cards */
+  --color-panel-raised: #2a2c33;
+  --color-panel-inset: #0e0f12;
+  --color-panel-muted: #a3a4ab;
+
+  --color-brand: #3b45cc;         /* primary buttons, toggles, today's bar */
+  --color-brand-hover: #323bb3;
+  --color-brand-soft: #8087e0;    /* past bars */
+  --color-brand-tint: #eceefc;    /* selected chips */
+
+  --color-good: #1d7a46;          /* earnings, Servable, Healthy */
+  --color-good-bright: #34d27b;   /* checks and Live dot on dark */
+  --color-good-tint: #e5f4ea;
+  --color-warn: #8a5a00;          /* Needs review */
+  --color-warn-tint: #fcf1d8;
+  --color-bad: #b42318;           /* Not served, Revoke */
+  --color-bad-tint: #fdecea;
+  --color-neutral-tint: #ecebe6;  /* Duplicate, Withdrawn, Coming soon, Revoked */
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes flash-in {
+  from { background-color: var(--color-brand-tint); }
+}
+.flash-in {
+  animation: flash-in 1.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flash-in { animation: none; }
+  * { transition: none !important; }
+}

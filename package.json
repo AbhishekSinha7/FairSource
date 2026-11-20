@@ -1,0 +1,29 @@
+{
+  "name": "fairsource",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "services/ingest",
+    "services/api",
+    "services/mcp",
+    "web"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/shared && npm run build -w services/ingest -w services/api -w services/mcp",
+    "typecheck": "npm run build -w packages/shared && npm run typecheck --workspaces --if-present",
+    "test": "npm run build -w packages/shared && npm test --workspaces --if-present",
+    "dev:ingest": "npm run dev -w services/ingest",
+    "dev:api": "npm run dev -w services/api",
+    "dev:mcp": "npm run dev -w services/mcp",
+    "dev:web": "npm run dev -w web"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
