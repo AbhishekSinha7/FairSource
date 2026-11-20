@@ -138,8 +138,8 @@ describe('OpenAPI spec', () => {
   });
 
   test('the spec can carry the real public address for the API and MCP', () => {
-    const s = openApiSpec({ apiBaseUrl: 'https://ask123.web.app', mcpUrl: 'https://ask123.web.app/mcp' }) as { servers: Array<{ url: string }>; info: { description: string } };
-    assert.equal(s.servers[0]!.url, 'https://ask123.web.app');
-    assert.match(s.info.description, /https:\/\/ask123\.web\.app\/mcp/);
+    const s = openApiSpec({ apiBaseUrl: 'https://fairsource.web.app', mcpUrl: 'https://fairsource.web.app/mcp' }) as { servers: Array<{ url: string }>; info: { description: string } };
+    assert.equal(s.servers[0]!.url, 'https://fairsource.web.app');
+    assert.match(s.info.description, /https:\/\/fairsource\.web\.app\/mcp/);
   });
 });

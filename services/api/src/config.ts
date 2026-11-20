@@ -5,6 +5,8 @@ export interface ApiConfig {
   embeddingModel: string;
   embeddingDims: number;
   answerModel: string;
+  /** Used when the answer model is overloaded (503/429) or times out. */
+  answerFallbackModel: string;
   /** Nearest-neighbour candidates fetched before licence filtering. */
   candidates: number;
   /**
@@ -27,7 +29,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): ApiConfig {
     location: env.GOOGLE_CLOUD_LOCATION ?? 'asia-south1',
     embeddingModel: env.MODEL_EMBEDDING ?? 'gemini-embedding-001',
     embeddingDims: n('EMBEDDING_DIMS', 768),
-    answerModel: env.MODEL_FLASH ?? 'gemini-2.5-flash',
+    answerModel: env.MODEL_FLASH ?? 'gemini-3.8-flash',
+    answerFallbackModel: env.MODEL_FALLBACK ?? 'gemini-3.5-flash-lite',
     candidates: n('CANDIDATES', 50),
     minScore: n('MIN_SCORE', 0.35),
     requestsPerMinute: n('REQUESTS_PER_MINUTE', 60),

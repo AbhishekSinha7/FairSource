@@ -210,11 +210,22 @@ export class GeminiAnswerer implements Answerer {
   ) {}
   async answer(question: string, sources: AnswerSource[], language: string) {
     const blocks = sources.map((s) => `[${s.n}] ${s.title} (${s.publisher})\n${s.text}`).join('\n\n');
-    const r = await this.ai.models.generateContent({
-      model: this.cfg.answerModel,
-      contents: `Sources:\n\n${blocks}\n\nQuestion: ${question}\nAnswer language (ISO 639-1): ${language}`,
-      config: { systemInstruction: ANSWER_SYSTEM, temperature: 0.2 },
-    });
+    const ask = (model: string) =>
+      this.ai.models.generateContent({
+        model,
+        contents: `Sources:\n\n${blocks}\n\nQuestion: ${question}\nAnswer language (ISO 639-1): ${language}`,
+        config: { systemInstruction: ANSWER_SYSTEM, temperature: 0.2 },
+      });
+    let r;
+    try {
+      r = await ask(this.cfg.answerModel);
+    } catch (e) {
+      // Overloaded (503), rate-limited (429) or timed out: answer with the lighter model instead.
+      const status = Number((e as { status?: number }).status ?? 0);
+      const temporary = [429, 500, 503, 504].includes(status) || /UNAVAILABLE|DEADLINE|overloaded|high demand/i.test(String((e as Error).message));
+      if (!temporary || this.cfg.answerFallbackModel === this.cfg.answerModel) throw e;
+      r = await ask(this.cfg.answerFallbackModel);
+    }
     const text = r.text?.trim();
     if (!text) throw new Error('empty answer');
     return text;

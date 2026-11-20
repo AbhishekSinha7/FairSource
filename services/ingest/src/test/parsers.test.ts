@@ -108,3 +108,31 @@ test('html: article text ignores navigation, sidebars, scripts and ads', () => {
   assert.equal(mainText(a), 'Title Body text');
   assert.equal(mainText(a), mainText(b));
 });
+
+test('full-text feeds with thousands of escaped HTML entities parse (Blogger, WordPress)', () => {
+  const body = '&lt;p&gt;पुणे मेट्रो &amp; बातम्या&lt;/p&gt;'.repeat(400); // 2,000 entities in one post
+  const xml = `<?xml version='1.0' encoding='UTF-8'?><?xml-stylesheet href="http://www.blogger.com/styles/atom.css" type="text/css"?>` +
+    `<feed xmlns='http://www.w3.org/2005/Atom'><title>Blog</title>` +
+    [1, 2, 3].map((n) => `<entry><id>tag:b,${n}</id><title>Post ${n}</title><content type='html'>${body}</content><link rel='alternate' type='text/html' href='https://b.blogspot.com/p${n}.html'/></entry>`).join('') +
+    `</feed>`;
+  const f = parseFeed(xml, 'https://b.blogspot.com/feeds/posts/default');
+  assert.equal(f.items.length, 3);
+  assert.equal(f.items[2]!.url, 'https://b.blogspot.com/p3.html');
+});
+
+test('large sitemaps with &amp; in many URLs parse', () => {
+  const urls = Array.from({ length: 1500 }, (_, i) => `<url><loc>https://e.in/a?x=1&amp;id=${i}</loc></url>`).join('');
+  const s = parseSitemap(`<urlset>${urls}</urlset>`);
+  assert.equal(s.entries.length, 1500);
+  assert.equal(s.entries[1499]!.loc, 'https://e.in/a?x=1&id=1499');
+});
+
+test('entity bombs stay harmless', () => {
+  // Nested ("billion laughs"): the parser doesn't expand entities inside entities.
+  const lol = ['<!ENTITY a0 "lol">', ...Array.from({ length: 12 }, (_, i) => `<!ENTITY a${i + 1} "${`&a${i};`.repeat(10)}">`)].join('');
+  const nested = parseFeed(`<?xml version="1.0"?><!DOCTYPE feed [${lol}]><feed><title>&a12;</title></feed>`, 'https://evil.example/feed');
+  assert.ok((nested.title ?? '').length < 100);
+  // Flat (one big entity repeated): rejected by the total-length cap.
+  const flat = `<?xml version="1.0"?><!DOCTYPE feed [<!ENTITY big "${'x'.repeat(9000)}">]><feed><title>${'&big;'.repeat(5000)}</title></feed>`;
+  assert.throws(() => parseFeed(flat, 'https://evil.example/feed'));
+});

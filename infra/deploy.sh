@@ -6,8 +6,8 @@
 #   FIREBASE_API_KEY=AIza...            # Firebase console -> Project settings -> Your apps -> Web app
 #   GEMINI_API_KEY=...                  # optional; without it Gemini runs on Vertex AI (location "global")
 #   ADMIN_EMAIL=you@gmail.com           # optional; links this Google account as a publisher
-#   HOSTING_SITE=fairsource             # optional; serve everything at https://fairsource.web.app
-#                                       # (default: https://<PROJECT>.web.app)
+#   HOSTING_SITE=fairsource             # optional; default fairsource -> https://fairsource.web.app
+#                                       # (set HOSTING_SITE=$PROJECT for https://<PROJECT>.web.app)
 #   bash infra/deploy.sh
 #
 # Safe to run again: it rebuilds, redeploys and updates the wiring in place.
@@ -22,7 +22,7 @@ ORG_ID=${ORG_ID:-pub_example}
 ORG_NAME=${ORG_NAME:-Example Marathi Daily}
 MIN_API_INSTANCES=${MIN_API_INSTANCES:-0}
 # One public address for the dashboard, API (/v1) and MCP (/mcp), served by Firebase Hosting.
-HOSTING_SITE=${HOSTING_SITE:-$PROJECT}
+HOSTING_SITE=${HOSTING_SITE:-fairsource}
 PUBLIC_URL=${PUBLIC_URL:-https://$HOSTING_SITE.web.app}
 HOSTING=${HOSTING:-1}
 FIREBASE_TOOLS=firebase-tools@15.35.0

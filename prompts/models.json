@@ -1,9 +1,10 @@
 {
-  "_note": "Model IDs live here, not in code. These are known-good defaults; check Google AI Studio for newer models and update before the buildathon. Env vars MODEL_PRO, MODEL_FLASH, MODEL_EMBEDDING, MODEL_GEMMA override them.",
-  "pro": "gemini-2.5-pro",
-  "flash": "gemini-2.5-flash",
-  "flashLite": "gemini-2.5-flash-lite",
+  "_note": "Model IDs live here, not in code. Checked on 20 Nov 2026 against a new Gemini API key: the 2.5 models and Gemma 3 are no longer available to new users. 'fallback' is used automatically when the main model is overloaded (503) or times out. Env vars MODEL_PRO, MODEL_FLASH, MODEL_FALLBACK, MODEL_EMBEDDING, MODEL_GEMMA override these.",
+  "pro": "gemini-3.8-flash",
+  "flash": "gemini-3.8-flash",
+  "fallback": "gemini-3.5-flash-lite",
+  "flashLite": "gemini-3.5-flash-lite",
   "embedding": "gemini-embedding-001",
   "embeddingDimensions": 768,
-  "gemma": "gemma-3-27b-it"
+  "gemma": "gemma-4-31b-it"
 }

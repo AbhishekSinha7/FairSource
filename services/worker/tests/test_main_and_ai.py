@@ -138,3 +138,24 @@ def test_settings_read_models_json():
     s = load_settings({"GOOGLE_CLOUD_PROJECT": "fs-dev"})
     assert s.raw_bucket == "fs-dev-raw" and s.embedding_dims == 768
     assert s.model_flash and s.model_embedding
+
+
+def test_overloaded_main_model_falls_back_to_the_lighter_one():
+    good = SimpleNamespace(text=GOOD)
+    ai, models = ai_with([api_error(503), api_error(503), api_error(503), good], model_fallback="lite")
+    out = ai.clean("text", {})
+    assert out.language == "mr"
+    assert [r[1]["model"] for r in models.requests] == ["flash", "flash", "flash", "lite"]
+    assert ai.fallbacks == 1
+
+
+def test_fallback_overloaded_too_is_retryable():
+    ai, _ = ai_with([api_error(503)] * 6, model_fallback="lite")
+    with pytest.raises(RetryableError):
+        ai.ocr(b"x", "image/png")
+
+
+def test_models_json_has_current_models():
+    s = load_settings({"GOOGLE_CLOUD_PROJECT": "fs-dev"})
+    assert "2.5" not in s.model_flash and "2.5" not in s.model_pro and "gemma-3" not in s.model_gemma
+    assert s.model_fallback and s.model_fallback != s.model_flash

@@ -226,7 +226,7 @@ All seven screens are built in `web/` and run on demo data:
 | Stored `tokenCount` from Gemini `count_tokens`; chunk sizing uses a local estimate | Metering bills on `tokenCount`, so it should be the model's real count; the estimate is only for splitting |
 | Gemma via the Gemini API (`GEMMA_API_KEY` on Vertex), falling back to Flash | Gemma isn't on Vertex AI's Gemini endpoint |
 | Embedding falls back to one input per request if a batch is refused | Some endpoints accept only one input per call |
-| Model IDs filled in `prompts/models.json` (`gemini-2.5-pro`, `gemini-2.5-flash`, `gemini-embedding-001`, `gemma-3-27b-it`) | Known-good defaults; check AI Studio for newer ones and change the file, not code |
+| Model IDs in `prompts/models.json`: `gemini-3.8-flash` (cleaning, OCR, answers), `gemini-3.5-flash-lite` (automatic fallback when the main model is overloaded), `gemini-embedding-001`, `gemma-4-31b-it`. Checked 20 Nov 2026; the 2.5 models and Gemma 3 are closed to new API keys | Change the file, not code. Keep `gemini-embedding-001`: changing the embedding model means re-embedding every chunk |
 | New worker-owned document fields: `cleanHash`, `processedFetchedAt`, `processingError` (shared schema and `models.py`) | The bookkeeping above |
 | Python `>=3.12` (was pinned to 3.12) | Developed and tested on 3.15 locally; the container still uses 3.12 |
 
@@ -405,7 +405,7 @@ Then create the worker push subscription (with dead-letter topic), the scheduler
 ## Open items
 
 - [ ] Akshay reviews and agrees schema v2 (`schema.ts`, `models.py`, `ledger.sql`) before 20 Nov
-- [ ] Check the model IDs in `prompts/models.json` (gemini-2.5-*, gemini-embedding-001, gemma-3-27b-it) against what AI Studio offers now
+- [x] Model IDs updated to the 3.x models available to new API keys, with an automatic fallback (20 Nov 2026)
 - [ ] Run ingest against `fs-dev` (Firestore, Storage, Pub/Sub adapters untested against real services) and one real publisher feed
 - [ ] Run `scripts/try_gemini.py` with a Gemini key on 5 real Marathi/Hindi articles and 2 scans; tune prompts if needed
 - [ ] Calibrate `MIN_SCORE` with the retrieval eval set once real embeddings exist

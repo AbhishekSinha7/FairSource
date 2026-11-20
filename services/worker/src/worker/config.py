@@ -27,6 +27,7 @@ class Settings:
     model_flash: str
     model_embedding: str
     model_gemma: str
+    model_fallback: str = ""  # used when the main model is overloaded or times out
     embedding_dims: int = 768
     embed_batch: int = 100
     chunk_min_tokens: int = 400
@@ -54,10 +55,11 @@ def load_settings(env: dict[str, str] | None = None) -> Settings:
         project=project,
         raw_bucket=e.get("RAW_BUCKET", f"{project}-raw"),
         clean_bucket=e.get("CLEAN_BUCKET", f"{project}-clean"),
-        model_pro=model("pro", "MODEL_PRO", "gemini-2.5-pro"),
-        model_flash=model("flash", "MODEL_FLASH", "gemini-2.5-flash"),
+        model_pro=model("pro", "MODEL_PRO", "gemini-3.8-flash"),
+        model_flash=model("flash", "MODEL_FLASH", "gemini-3.8-flash"),
         model_embedding=model("embedding", "MODEL_EMBEDDING", "gemini-embedding-001"),
-        model_gemma=model("gemma", "MODEL_GEMMA", "gemma-3-27b-it"),
+        model_gemma=model("gemma", "MODEL_GEMMA", "gemma-4-31b-it"),
+        model_fallback=model("fallback", "MODEL_FALLBACK", "gemini-3.5-flash-lite"),
         embedding_dims=int(models.get("embeddingDimensions", 768)),
         embed_batch=int(e.get("EMBED_BATCH", "100")),
         exact_token_counts=e.get("EXACT_TOKEN_COUNTS", "1") != "0",

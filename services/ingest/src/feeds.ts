@@ -1,6 +1,7 @@
 // RSS 2.0, RSS 1.0 (RDF) and Atom parsing, plus the next-page link used by backfill.
 
 import { XMLParser } from 'fast-xml-parser';
+import { XML_ENTITY_LIMITS } from './xml.js';
 
 export interface FeedItem {
   url?: string;
@@ -25,7 +26,7 @@ const parser = new XMLParser({
   attributeNamePrefix: '@_',
   textNodeName: '#text',
   removeNSPrefix: true,
-  processEntities: true,
+  processEntities: XML_ENTITY_LIMITS,
   htmlEntities: true,
   isArray: (name) => ['item', 'entry', 'link'].includes(name),
 });

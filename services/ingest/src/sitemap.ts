@@ -1,6 +1,7 @@
 // sitemap.xml, sitemap index and Google News sitemaps.
 
 import { XMLParser } from 'fast-xml-parser';
+import { XML_ENTITY_LIMITS } from './xml.js';
 
 export interface SitemapEntry {
   loc: string;
@@ -11,7 +12,12 @@ export type Sitemap = { kind: 'index'; entries: SitemapEntry[] } | { kind: 'urls
 
 export class NotASitemapError extends Error {}
 
-const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, isArray: (n) => n === 'url' || n === 'sitemap' });
+const parser = new XMLParser({
+  ignoreAttributes: true,
+  removeNSPrefix: true,
+  processEntities: XML_ENTITY_LIMITS,
+  isArray: (n) => n === 'url' || n === 'sitemap',
+});
 
 type Node = Record<string, unknown>;
 

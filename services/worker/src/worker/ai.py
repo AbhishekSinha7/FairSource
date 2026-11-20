@@ -97,6 +97,7 @@ class GeminiAI:
         self.clean_system: str = spec["systemInstruction"]
         self.clean_schema: dict[str, Any] = spec["responseSchema"]
         self.embed_batch = settings.embed_batch
+        self.fallbacks = 0  # how often the fallback model was used (for logs and tests)
 
     # ------------------------------------------------------------ plumbing
 
@@ -120,16 +121,26 @@ class GeminiAI:
                 raise RetryableError(f"{what}: network error after 3 tries: {e}") from e
         raise AssertionError("unreachable")
 
+    def _generate(self, what: str, model: str, **kwargs: Any) -> Any:
+        """generate_content on `model`; if it stays overloaded or times out after the
+        retries in _call, try the fallback model once before giving up."""
+        try:
+            return self._call(what, lambda: self.client.models.generate_content(model=model, **kwargs))
+        except RetryableError:
+            fallback = self.s.model_fallback
+            if not fallback or fallback == model:
+                raise
+            self.fallbacks += 1
+            return self._call(f"{what} (fallback {fallback})", lambda: self.client.models.generate_content(model=fallback, **kwargs))
+
     # ---------------------------------------------------------------- steps
 
     def ocr(self, data: bytes, mime_type: str) -> str:
-        resp = self._call(
+        resp = self._generate(
             "ocr",
-            lambda: self.client.models.generate_content(
-                model=self.s.model_pro,
-                contents=[types.Part.from_bytes(data=data, mime_type=mime_type), OCR_PROMPT],
-                config=types.GenerateContentConfig(temperature=0),
-            ),
+            self.s.model_pro,
+            contents=[types.Part.from_bytes(data=data, mime_type=mime_type), OCR_PROMPT],
+            config=types.GenerateContentConfig(temperature=0),
         )
         return (resp.text or "").strip()
 
@@ -139,17 +150,15 @@ class GeminiAI:
         extra = ""
         last_error = ""
         for _ in range(2):
-            resp = self._call(
+            resp = self._generate(
                 "clean",
-                lambda: self.client.models.generate_content(
-                    model=self.s.model_flash,
-                    contents=prompt + extra,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self.clean_system,
-                        response_mime_type="application/json",
-                        response_schema=self.clean_schema,
-                        temperature=0,
-                    ),
+                self.s.model_flash,
+                contents=prompt + extra,
+                config=types.GenerateContentConfig(
+                    system_instruction=self.clean_system,
+                    response_mime_type="application/json",
+                    response_schema=self.clean_schema,
+                    temperature=0,
                 ),
             )
             try:

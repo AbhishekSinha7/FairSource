@@ -31,7 +31,8 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link rel="stylesheet" href={FONTS} />
       </head>
-      <body className="antialiased">
+      {/* Browser extensions (Grammarly, ColorZilla, …) add attributes to <body> before React loads. */}
+      <body className="antialiased" suppressHydrationWarning>
         <Shell identity={await identity(live)} live={live} modeSwitch={await modeSwitchAvailable()}>
           {children}
         </Shell>
