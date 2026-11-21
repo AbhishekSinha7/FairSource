@@ -1,6 +1,6 @@
 """Raw file -> text. HTML is extracted locally with trafilatura; PDFs and images
-go to Gemini OCR (see ai.py). PDFs are split into parts of N pages first, so
-one call never has to transcribe more than N pages."""
+go to Gemini OCR and videos to Gemini transcription (see ai.py). PDFs are split
+into parts of N pages first, so one call never has to transcribe more than N pages."""
 
 from __future__ import annotations
 
@@ -16,6 +16,8 @@ from .errors import PermanentError
 HTML_TYPES = {"text/html", "application/xhtml+xml"}
 IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/tiff"}
 PDF = "application/pdf"
+# Must match the video types ingest accepts (services/ingest/src/uploads.ts).
+VIDEO_TYPES = {"video/mp4", "video/quicktime", "video/webm", "video/mpeg"}
 
 
 @dataclass

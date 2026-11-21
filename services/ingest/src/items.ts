@@ -49,6 +49,10 @@ const EXT: Record<string, string> = {
   'image/png': 'png',
   'image/webp': 'webp',
   'image/tiff': 'tif',
+  'video/mp4': 'mp4',
+  'video/quicktime': 'mov',
+  'video/webm': 'webm',
+  'video/mpeg': 'mpg',
   'text/plain': 'txt',
 };
 export const extFor = (contentType: string) => EXT[contentType] ?? 'bin';

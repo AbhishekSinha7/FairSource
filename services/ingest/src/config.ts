@@ -5,6 +5,8 @@ export interface IngestConfig {
   minIntervalMs: number;
   /** Largest page or file we fetch or accept. */
   maxBytes: number;
+  /** Largest uploaded video (transcribed by Gemini; bigger than documents). */
+  maxVideoBytes: number;
   timeoutMs: number;
   /** Work per call before saving progress, kept under the Cloud Run request timeout. */
   runBudgetMs: number;
@@ -28,6 +30,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IngestConfig {
     userAgent: env.USER_AGENT ?? `FairSourceBot/0.1 (+${env.BOT_INFO_URL ?? 'https://fairsource.example/bot'})`,
     minIntervalMs: n('MIN_INTERVAL_MS', 1000),
     maxBytes: n('MAX_BYTES', 10 * 1024 * 1024),
+    maxVideoBytes: n('MAX_VIDEO_BYTES', 100 * 1024 * 1024),
     timeoutMs: n('FETCH_TIMEOUT_MS', 20_000),
     runBudgetMs: n('RUN_BUDGET_MS', 240_000),
     leaseMs: n('LEASE_MS', 330_000),

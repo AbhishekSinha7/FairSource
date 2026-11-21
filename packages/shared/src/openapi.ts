@@ -4,9 +4,9 @@
 // so change both together.
 
 export interface OpenApiOptions {
-  /** e.g. "https://fairsource.web.app"; shown first in the server list. */
+  /** e.g. "https://ask123.web.app"; shown first in the server list. */
   apiBaseUrl?: string;
-  /** e.g. "https://fairsource.web.app/mcp"; shown in the MCP example. */
+  /** e.g. "https://ask123.web.app/mcp"; shown in the MCP example. */
   mcpUrl?: string;
 }
 

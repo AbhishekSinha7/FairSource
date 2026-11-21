@@ -109,6 +109,7 @@ class FakeAI:
     def __init__(self):
         self.calls: list[str] = []
         self.ocr_text = "ओसीआर केलेला मजकूर येथे आहे. " * 20
+        self.transcript = "पुणे मेट्रो बातमी\nहिंजवडी ते शिवाजीनगर मेट्रो मार्गाचे काम अंतिम टप्प्यात असल्याचे अधिकाऱ्यांनी सांगितले. " * 6
         self.language: Optional[str] = None
         self.same = False
         self.safety: Optional[str] = "ok"
@@ -118,8 +119,13 @@ class FakeAI:
         self.calls.append(f"ocr:{mime_type}")
         return self.ocr_text
 
+    def transcribe(self, data, mime_type, uri):
+        self.calls.append(f"transcribe:{mime_type}")
+        return self.transcript
+
     def clean(self, text, hints):
         self.calls.append("clean")
+        self.last_hints = hints
         if self.invalid_clean:
             from worker.errors import PermanentError
 

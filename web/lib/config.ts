@@ -1,5 +1,5 @@
 // The public addresses shown in copy-paste snippets (Playground curl, MCP config, docs).
-// NEXT_PUBLIC_FAIRSOURCE_URL: one address for everything (Firebase Hosting), e.g. https://fairsource.web.app
+// NEXT_PUBLIC_FAIRSOURCE_URL: one address for everything (Firebase Hosting), e.g. https://ask123.web.app
 // NEXT_PUBLIC_FAIRSOURCE_DOMAIN: older layout with api.<domain> and mcp.<domain>.
 const PUBLIC_URL = process.env.NEXT_PUBLIC_FAIRSOURCE_URL?.replace(/\/$/, '');
 export const DOMAIN = process.env.NEXT_PUBLIC_FAIRSOURCE_DOMAIN ?? '[YOUR DOMAIN]';

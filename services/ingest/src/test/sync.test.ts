@@ -303,6 +303,34 @@ describe('uploads', () => {
     await assert.rejects(signUpload(h.deps, { publisherId: 'pub_1', sourceId: s.id, filename: 'a.exe', contentType: 'application/x-msdownload', size: 10 }), (e: unknown) => e instanceof UploadError && e.code === 'unsupported_type');
     await assert.rejects(signUpload(h.deps, { publisherId: 'pub_2', sourceId: s.id, filename: 'a.pdf', contentType: 'application/pdf', size: 10 }), (e: unknown) => e instanceof UploadError && e.code === 'forbidden');
   });
+
+  test('videos are accepted up to their own, larger limit', async () => {
+    const h = harness();
+    const s = h.addSource('upload', null, 'src_upload');
+    const MB = 1024 * 1024;
+    for (const [filename, contentType] of [['news.mp4', 'video/mp4'], ['clip.mov', 'video/quicktime'], ['a.webm', 'video/webm'], ['old.mpg', 'video/mpeg']] as const) {
+      const ok = await signUpload(h.deps, { publisherId: 'pub_1', sourceId: s.id, filename, contentType, size: 40 * MB });
+      assert.ok(ok.uploadUrl, filename);
+    }
+    await assert.rejects(signUpload(h.deps, { publisherId: 'pub_1', sourceId: s.id, filename: 'long.mp4', contentType: 'video/mp4', size: 101 * MB }), (e: unknown) => e instanceof UploadError && e.code === 'too_large' && /videos can be up to 100 MB/.test(e.message));
+    await assert.rejects(signUpload(h.deps, { publisherId: 'pub_1', sourceId: s.id, filename: 'a.avi', contentType: 'video/x-msvideo', size: 10 }), (e: unknown) => e instanceof UploadError && e.code === 'unsupported_type');
+  });
+
+  test('an uploaded video becomes a document with an .mp4 raw file; an oversized one is rejected', async () => {
+    const h = harness();
+    const s = h.addSource('upload', null, 'src_upload');
+    const path = `uploads/pub_1/${s.id}/u1/मेट्रो बातमी.mp4`;
+    h.blobs.objects.set(path, { bytes: new Uint8Array([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70]), contentType: 'video/mp4' });
+    const r = await onUploadFinalized(h.deps, path);
+    assert.ok(!r.ignored && r.outcomes.length === 1 && r.outcomes[0]!.outcome === 'new');
+    assert.ok([...h.blobs.objects.keys()].some((k) => /^pub_1\/\d{4}\/\d{2}\/[0-9a-f]+\.mp4$/.test(k)));
+
+    const big = `uploads/pub_1/${s.id}/u2/big.mp4`;
+    h.blobs.objects.set(big, { bytes: new Uint8Array(h.deps.cfg.maxVideoBytes + 1), contentType: 'video/mp4' });
+    const r2 = await onUploadFinalized(h.deps, big);
+    assert.ok(!r2.ignored && r2.outcomes.length === 0 && r2.rejected.includes('big.mp4'));
+    assert.ok(!h.blobs.objects.has(big)); // the staged upload is removed either way
+  });
 });
 
 describe('feed discovery', () => {

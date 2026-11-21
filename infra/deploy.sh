@@ -6,8 +6,10 @@
 #   FIREBASE_API_KEY=AIza...            # Firebase console -> Project settings -> Your apps -> Web app
 #   GEMINI_API_KEY=...                  # optional; without it Gemini runs on Vertex AI (location "global")
 #   ADMIN_EMAIL=you@gmail.com           # optional; links this Google account as a publisher
-#   HOSTING_SITE=fairsource             # optional; default fairsource -> https://fairsource.web.app
-#                                       # (set HOSTING_SITE=$PROJECT for https://<PROJECT>.web.app)
+#   HOSTING_SITE=fairsource             # optional; serve everything at https://fairsource.web.app
+#                                       # (default: https://<PROJECT>.web.app)
+#   JUDGE_ACCESS=1                      # optional; any Google account can sign in and explore as a
+#                                       # publisher (joins ORG_ID) or a buyer (own sandbox). Default 0.
 #   bash infra/deploy.sh
 #
 # Safe to run again: it rebuilds, redeploys and updates the wiring in place.
@@ -21,8 +23,10 @@ ADMIN_EMAIL=${ADMIN_EMAIL:-}
 ORG_ID=${ORG_ID:-pub_example}
 ORG_NAME=${ORG_NAME:-Example Marathi Daily}
 MIN_API_INSTANCES=${MIN_API_INSTANCES:-0}
+JUDGE_ACCESS=${JUDGE_ACCESS:-0}
+JUDGE_PUBLISHER_ORG=${JUDGE_PUBLISHER_ORG:-$ORG_ID}
 # One public address for the dashboard, API (/v1) and MCP (/mcp), served by Firebase Hosting.
-HOSTING_SITE=${HOSTING_SITE:-fairsource}
+HOSTING_SITE=${HOSTING_SITE:-$PROJECT}
 PUBLIC_URL=${PUBLIC_URL:-https://$HOSTING_SITE.web.app}
 HOSTING=${HOSTING:-1}
 FIREBASE_TOOLS=firebase-tools@15.35.0
@@ -122,9 +126,20 @@ deploy mcp --image="$REPO/mcp:$TAG" --service-account="$(SA mcp)" --allow-unauth
   --max-instances=10 --set-env-vars="API_BASE=$API_URL"
 deploy web --image="$REPO/web:$TAG" --service-account="$(SA web)" --allow-unauthenticated \
   --memory=1Gi --max-instances=5 \
-  --set-env-vars="GOOGLE_CLOUD_PROJECT=$PROJECT,DATA_BACKEND=firestore,INGEST_URL=$INGEST_URL,API_URL=$API_URL" \
+  --set-env-vars="GOOGLE_CLOUD_PROJECT=$PROJECT,DATA_BACKEND=firestore,INGEST_URL=$INGEST_URL,API_URL=$API_URL,JUDGE_ACCESS=$JUDGE_ACCESS,JUDGE_PUBLISHER_ORG=$JUDGE_PUBLISHER_ORG" \
   --set-secrets="INTERNAL_TOKEN=internal-token:latest"
 MCP_URL=$(url mcp); WEB_URL=$(url web)
+
+say "Uploads: let the dashboard's browser upload straight to Cloud Storage (CORS)"
+# The dashboard PUTs files to a signed URL on the raw bucket; without this the browser blocks it.
+CORS_FILE=$(mktemp)
+cat >"$CORS_FILE" <<EOF
+[{"origin": ["$PUBLIC_URL", "$WEB_URL", "https://$PROJECT.web.app", "https://$PROJECT.firebaseapp.com", "http://localhost:3000", "http://localhost:3001"],
+  "method": ["PUT"], "responseHeader": ["Content-Type"], "maxAgeSeconds": 3600}]
+EOF
+gcloud storage buckets update "gs://$PROJECT-raw" --cors-file="$CORS_FILE" >/dev/null
+rm -f "$CORS_FILE"
+echo "  gs://$PROJECT-raw accepts uploads from $PUBLIC_URL and $WEB_URL"
 
 say "Wiring: who may call the private services"
 invoker() { gcloud run services add-iam-policy-binding "$1" --region="$REGION" --member="serviceAccount:$(SA "$2")" --role=roles/run.invoker >/dev/null; }
@@ -232,6 +247,9 @@ $( [ "$HOSTING_SITE" = "$PROJECT" ] && echo "  ($PUBLIC_URL is already authorize
 
   Direct Cloud Run addresses (the dashboard's Demo/Live switch works only here):
   $WEB_URL   $API_URL   $MCP_URL
+$( [ "$JUDGE_ACCESS" = 1 ] && echo "
+  Judge access is ON: any Google account can sign in. After judging:
+    npx tsx infra/create-org.ts --project $PROJECT --unlink-judges" )
 EOF
 else
 cat <<EOF

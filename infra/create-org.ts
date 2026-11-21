@@ -13,6 +13,10 @@
 //
 // Remove someone's access (their role, and every session they're signed in with):
 //   npx tsx infra/create-org.ts --project fs-dev --unlink --email old@example.com
+//
+// After judging: remove every account that signed in through judge access (JUDGE_ACCESS=1).
+// Their buyer sandboxes and usage records stay, so the earnings history is unchanged.
+//   npx tsx infra/create-org.ts --project fs-dev --unlink-judges
 
 import { newSource } from '@fairsource/shared';
 import { getApps, initializeApp } from 'firebase-admin/app';
@@ -32,6 +36,7 @@ const { values: a } = parseArgs({
     languages: { type: 'string', default: 'mr,hi,en' },
     quota: { type: 'string', default: '10000000' },
     unlink: { type: 'boolean', default: false },
+    'unlink-judges': { type: 'boolean', default: false },
   },
 });
 
@@ -44,6 +49,26 @@ function need(v: string | undefined, flag: string): string {
 }
 
 const project = need(a.project, 'project');
+
+if (a['unlink-judges']) {
+  const judgeAuth = getAuth(getApps()[0] ?? initializeApp({ projectId: project }));
+  let removed = 0;
+  let pageToken: string | undefined;
+  do {
+    const page = await judgeAuth.listUsers(1000, pageToken);
+    for (const u of page.users) {
+      if (u.customClaims?.judge !== true) continue;
+      await judgeAuth.setCustomUserClaims(u.uid, null);
+      await judgeAuth.revokeRefreshTokens(u.uid);
+      console.log(`  removed ${u.email ?? u.uid} (${u.customClaims.role} ${u.customClaims.orgId})`);
+      removed++;
+    }
+    pageToken = page.pageToken;
+  } while (pageToken);
+  console.log(`${removed} judge account(s) removed and signed out. Also turn judge access off:`);
+  console.log(`  gcloud run services update web --region asia-south1 --project ${project} --update-env-vars JUDGE_ACCESS=0`);
+  process.exit(0);
+}
 
 if (a.unlink) {
   const target = need(a.email, 'email').toLowerCase();

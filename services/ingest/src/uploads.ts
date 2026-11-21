@@ -1,6 +1,7 @@
 // Uploads: the dashboard asks for a signed URL, the browser uploads straight to
 // gs://<raw>/uploads/..., and Eventarc calls onUploadFinalized for each new
-// object. ZIPs are expanded; each file becomes its own document.
+// object. ZIPs are expanded; each file becomes its own document. Videos are
+// transcribed by the worker (Gemini) and then handled like any other document.
 
 import { randomUUID } from 'node:crypto';
 import { contentHashFor, identityKeyFor } from '@fairsource/shared';
@@ -16,11 +17,21 @@ const BY_EXT: Record<string, string> = {
   webp: 'image/webp',
   tif: 'image/tiff',
   tiff: 'image/tiff',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  mpeg: 'video/mpeg',
+  mpg: 'video/mpeg',
   zip: 'application/zip',
 };
 const ALLOWED_TYPES = new Set([...Object.values(BY_EXT), 'application/x-zip-compressed']);
 
 export const contentTypeForName = (name: string): string | null => BY_EXT[name.split('.').pop()?.toLowerCase() ?? ''] ?? null;
+
+const isVideo = (contentType: string) => contentType.startsWith('video/');
+/** Size limit for one file of this type (ZIPs count as documents). */
+const limitFor = (deps: Deps, contentType: string) => (isVideo(contentType) ? deps.cfg.maxVideoBytes : deps.cfg.maxBytes);
+const mb = (bytes: number) => Math.round(bytes / 1024 / 1024);
 
 export class UploadError extends Error {
   constructor(
@@ -43,8 +54,10 @@ export async function signUpload(deps: Deps, req: SignRequest) {
   const source = await deps.store.getSource(req.sourceId);
   if (!source || source.type !== 'upload') throw new UploadError('not_found', 'upload source not found');
   if (source.publisherId !== req.publisherId) throw new UploadError('forbidden', 'source belongs to another publisher');
-  if (req.size > deps.cfg.maxBytes) throw new UploadError('too_large', `files can be up to ${Math.round(deps.cfg.maxBytes / 1024 / 1024)} MB`);
-  if (!ALLOWED_TYPES.has(req.contentType)) throw new UploadError('unsupported_type', 'upload PDFs, images (JPEG, PNG, WebP, TIFF) or a ZIP');
+  if (!ALLOWED_TYPES.has(req.contentType)) throw new UploadError('unsupported_type', 'upload PDFs, images (JPEG, PNG, WebP, TIFF), videos (MP4, MOV, WebM, MPEG) or a ZIP');
+  if (req.size > limitFor(deps, req.contentType)) {
+    throw new UploadError('too_large', `${isVideo(req.contentType) ? 'videos' : 'files'} can be up to ${mb(limitFor(deps, req.contentType))} MB`);
+  }
 
   const safe = req.filename.normalize('NFC').replace(/[^\p{L}\p{M}\p{N}._-]+/gu, '_').slice(-120) || 'file';
   const path = `uploads/${req.publisherId}/${req.sourceId}/${randomUUID()}/${safe}`;
@@ -63,7 +76,9 @@ const isZip = (name: string, b: Uint8Array) => name.toLowerCase().endsWith('.zip
 function expand(deps: Deps, name: string, bytes: Uint8Array): { files: FileIn[]; rejected: string[] } {
   if (!isZip(name, bytes)) {
     const contentType = contentTypeForName(name);
-    return contentType && contentType !== 'application/zip' ? { files: [{ name, bytes, contentType }], rejected: [] } : { files: [], rejected: [name] };
+    // The signed URL can't cap the size, so check what actually arrived.
+    const ok = contentType && contentType !== 'application/zip' && bytes.length <= limitFor(deps, contentType);
+    return ok ? { files: [{ name, bytes, contentType }], rejected: [] } : { files: [], rejected: [name] };
   }
   const rejected: string[] = [];
   let count = 0;

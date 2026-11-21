@@ -9,6 +9,7 @@ on Vertex set GEMMA_API_KEY, otherwise the Gemma checks fall back to Flash.
 from __future__ import annotations
 
 import importlib
+import io
 import json
 import math
 import os
@@ -41,6 +42,21 @@ OCR_PROMPT = (
     "do not translate, summarise or correct anything. Leave out running headers, page numbers "
     "and decorative text. Separate paragraphs with a blank line. Output plain text only."
 )
+
+TRANSCRIBE_PROMPT = (
+    "This video comes from a news or media publisher. Write it out as plain text:\n"
+    "1. Everything that is said, word for word, in the language spoken. Do not translate, summarise "
+    "or correct anything. Start a new paragraph when the speaker or topic changes.\n"
+    "2. On-screen text that carries information (headlines, captions, names, figures), as "
+    "[On screen: ...] where it appears. Skip logos, watermarks and repeated tickers.\n"
+    "No timestamps and no descriptions of the pictures. "
+    "If nothing is said and no text is shown, reply exactly NO_TEXT."
+)
+
+# Gemini takes at most 20 MB inline per request, prompt included. Bigger videos go
+# through the Files API (Gemini API key) or are read from Cloud Storage (Vertex AI).
+INLINE_MEDIA_BYTES = 18 * 1024 * 1024
+MEDIA_READY_TIMEOUT_S = 300
 
 SAME_PROMPT = (
     "Below are two texts from the same publisher.\n"
@@ -143,6 +159,47 @@ class GeminiAI:
             config=types.GenerateContentConfig(temperature=0),
         )
         return (resp.text or "").strip()
+
+    def transcribe(self, data: bytes, mime_type: str, uri: str) -> str:
+        """Video -> transcript plus on-screen text. Low media resolution: the words matter, not the pixels."""
+        uploaded = None
+        if len(data) <= INLINE_MEDIA_BYTES:
+            part = types.Part.from_bytes(data=data, mime_type=mime_type)
+        elif _vertex():
+            part = types.Part.from_uri(file_uri=uri, mime_type=mime_type)
+        else:
+            uploaded = self._upload_media(data, mime_type)
+            part = types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime_type)
+        try:
+            resp = self._generate(
+                "transcribe",
+                self.s.model_flash,
+                contents=[part, TRANSCRIBE_PROMPT],
+                config=types.GenerateContentConfig(temperature=0, media_resolution=types.MediaResolution.MEDIA_RESOLUTION_LOW),
+            )
+        finally:
+            if uploaded is not None:
+                try:
+                    self.client.files.delete(name=uploaded.name)
+                except Exception:  # it expires on its own after 48 hours
+                    pass
+        text = (resp.text or "").strip()
+        return "" if text.upper().startswith("NO_TEXT") else text
+
+    def _upload_media(self, data: bytes, mime_type: str) -> Any:
+        """Files API upload, then wait until Gemini has processed the video."""
+        f = self._call("upload", lambda: self.client.files.upload(file=io.BytesIO(data), config=types.UploadFileConfig(mime_type=mime_type)))
+        waited = 0.0
+        while f.state == types.FileState.PROCESSING:
+            if waited >= MEDIA_READY_TIMEOUT_S:
+                raise RetryableError(f"upload: Gemini still processing the video after {MEDIA_READY_TIMEOUT_S} s")
+            self.sleep(5)
+            waited += 5
+            name = f.name
+            f = self._call("upload status", lambda: self.client.files.get(name=name))
+        if f.state == types.FileState.FAILED:
+            raise PermanentError("video_unreadable", "Gemini couldn't read the video")
+        return f
 
     def clean(self, text: str, hints: dict[str, str]) -> CleanResult:
         header = "\n".join(f"{k}: {v}" for k, v in hints.items() if v)

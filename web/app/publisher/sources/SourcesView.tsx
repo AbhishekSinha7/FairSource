@@ -12,6 +12,29 @@ type Props = Awaited<ReturnType<typeof getSources>>;
 type Tab = 'rss' | 'sitemap' | 'upload';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'mpeg', 'mpg'];
+/** What ingest accepts (services/ingest/src/uploads.ts). Checked here so a wrong file fails at once, not after a round trip. */
+const UPLOAD_EXTENSIONS = ['pdf', 'jpg', 'jpeg', 'png', 'webp', 'tif', 'tiff', 'zip', ...VIDEO_EXTENSIONS];
+const extensionOf = (name: string) => name.split('.').pop()?.toLowerCase() ?? '';
+const isVideoFile = (f: File) => VIDEO_EXTENSIONS.includes(extensionOf(f.name));
+const limitFor = (f: File) => (isVideoFile(f) ? MAX_VIDEO_BYTES : MAX_FILE_BYTES);
+
+/** PUT to the signed Cloud Storage URL, reporting progress (fetch can't report upload progress). */
+function putWithProgress(url: string, file: File, onProgress: (sent: number) => void): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (e) => onProgress(e.loaded);
+    xhr.onload = () => resolve(xhr.status);
+    // A network error here is almost always the bucket's CORS rule missing this site (infra/deploy.sh sets it).
+    xhr.onerror = () => reject(new Error('the browser could not reach Cloud Storage'));
+    xhr.ontimeout = () => reject(new Error('the upload timed out'));
+    xhr.timeout = 10 * 60 * 1000;
+    xhr.send(file);
+  });
+}
 
 export function SourcesView({ sources: initialSources, steps, latestItem, live = false }: Props & { live?: boolean }) {
   const router = useRouter();
@@ -77,22 +100,31 @@ export function SourcesView({ sources: initialSources, steps, latestItem, live =
   }
 
   /** Live: each file goes straight to Cloud Storage with a signed URL; processing starts on arrival. */
-  async function uploadLive(files: File[]): Promise<string> {
+  async function uploadLive(files: File[], onProgress: (pct: number) => void): Promise<{ ok: boolean; message: string }> {
+    const total = files.reduce((n, f) => n + f.size, 0) || 1;
+    let before = 0;
     let done = 0;
+    const partly = (why: string) => ({ ok: false, message: done ? `${done} of ${files.length} files uploaded. ${why}` : why });
     for (const f of files) {
       const r = await requestUpload({ name: f.name, type: f.type || 'application/octet-stream', size: f.size });
-      if (!r.ok) return `${f.name}: ${r.message}`;
-      const put = await fetch(r.data.uploadUrl, { method: 'PUT', headers: { 'content-type': f.type || 'application/octet-stream' }, body: f });
-      if (!put.ok) return `${f.name}: upload failed (${put.status}).`;
+      if (!r.ok) return partly(`${f.name}: ${r.message}`);
+      let status: number;
+      try {
+        status = await putWithProgress(r.data.uploadUrl, f, (sent) => onProgress(Math.round(((before + sent) / total) * 100)));
+      } catch (e) {
+        return partly(`${f.name}: upload failed, ${(e as Error).message}. Try again; if it keeps failing, the storage bucket's CORS setting needs this site's address.`);
+      }
+      if (status < 200 || status >= 300) return partly(`${f.name}: upload failed (${status}).`);
+      before += f.size;
       done += 1;
     }
     setTimeout(() => router.refresh(), 4000);
-    return `${done} ${done === 1 ? 'file' : 'files'} uploaded. Processing has started; results appear here in under a minute.`;
+    return { ok: true, message: `${done} ${done === 1 ? 'file' : 'files'} uploaded. Processing has started; results appear here in under a minute.` };
   }
 
   function uploaded(files: File[]) {
     const first = files[0]!;
-    setItem({ name: first.name, detail: `${Math.max(1, Math.round(first.size / 180_000))} pages · uploaded ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` });
+    setItem({ name: first.name, detail: `${isVideoFile(first) ? 'video, transcribed' : `${Math.max(1, Math.round(first.size / 180_000))} pages`} · uploaded ${new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}` });
     setReplayKey((k) => k + 1);
     setSources((all) =>
       all.map((s) => (s.type === 'Upload' ? { ...s, items: (s.items ?? 0) + files.length, itemsLabel: `${(s.items ?? 0) + files.length} pages`, lastRun: 'Just now' } : s)),
@@ -209,7 +241,7 @@ function SourceStatus({ s }: { s: SourceView }) {
 
 interface LiveSourceActions {
   connect: (type: 'rss' | 'sitemap', url: string, consent: boolean) => Promise<{ ok: boolean; message: string }>;
-  upload: (files: File[]) => Promise<string>;
+  upload: (files: File[], onProgress: (pct: number) => void) => Promise<{ ok: boolean; message: string }>;
 }
 
 function AddSource({
@@ -222,6 +254,7 @@ function AddSource({
   live?: LiveSourceActions;
 }) {
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
   const [tab, setTab] = useState<Tab>('rss');
   const [url, setUrl] = useState('');
   const [consent, setConsent] = useState(true);
@@ -240,9 +273,20 @@ function AddSource({
   function pick(list: FileList | null) {
     if (!list) return;
     const all = [...list];
-    const tooBig = all.filter((f) => f.size > MAX_FILE_BYTES);
-    setFiles(all.filter((f) => f.size <= MAX_FILE_BYTES));
-    setError(tooBig.length ? `${tooBig.map((f) => f.name).join(', ')} ${tooBig.length === 1 ? 'is' : 'are'} over 10 MB and won't be uploaded.` : null);
+    const unsupported = all.filter((f) => !UPLOAD_EXTENSIONS.includes(extensionOf(f.name)));
+    const tooBig = all.filter((f) => !unsupported.includes(f) && f.size > limitFor(f));
+    setFiles(all.filter((f) => !unsupported.includes(f) && !tooBig.includes(f)));
+    const names = (fs: File[]) => fs.map((f) => f.name).join(', ');
+    const audio = unsupported.some((f) => f.type.startsWith('audio/'));
+    const otherVideo = unsupported.some((f) => f.type.startsWith('video/'));
+    const problems = [
+      unsupported.length
+        ? `${names(unsupported)} can't be uploaded: ${audio ? 'audio isn\u2019t supported yet. ' : otherVideo ? 'convert the video to MP4 first. ' : ''}FairSource reads PDFs, images (JPEG, PNG, WebP, TIFF), videos (MP4, MOV, WebM, MPEG) and ZIPs.`
+        : '',
+      tooBig.length ? `${names(tooBig)} ${tooBig.length === 1 ? 'is' : 'are'} too big (up to 10 MB per document, 100 MB per video) and won't be uploaded.` : '',
+    ].filter(Boolean);
+    setError(problems.length ? problems.join(' ') : null);
+    setNotice(null);
   }
 
   async function submit(e: FormEvent) {
@@ -255,17 +299,20 @@ function AddSource({
       if (tab !== 'upload' && !url.trim()) return setError('Enter a web address, like example.in/feed or example.in.');
       setBusy(true);
       setError(null);
-      if (tab === 'upload') {
-        setNotice(await live.upload(files));
-        setFiles([]);
-      } else {
-        const r = await live.connect(tab, url, consent);
+      try {
+        const r = tab === 'upload' ? await live.upload(files, setProgress) : await live.connect(tab, url, consent);
         if (r.ok) {
           setNotice(r.message);
-          setUrl('');
+          if (tab === 'upload') setFiles([]);
+          else setUrl('');
         } else setError(r.message);
+      } catch {
+        // A server action that failed outright (network, deploy in progress): never leave the button stuck.
+        setError('Something went wrong. Check your connection and try again.');
+      } finally {
+        setBusy(false);
+        setProgress(null);
       }
-      setBusy(false);
       return;
     }
 
@@ -349,9 +396,21 @@ function AddSource({
             <svg viewBox="0 0 24 24" className="size-9 text-brand" aria-hidden="true">
               <path d="M12 16V4m0 0l-5 5m5-5l5 5M4 15v3a2 2 0 002 2h12a2 2 0 002-2v-3" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <div className="mt-4 text-[17px] font-semibold">Drop PDFs, images or a ZIP here</div>
-            <p className="mt-2 text-[15px] text-muted">Scans are read with Gemini OCR. Up to 10 MB per file; ZIPs are expanded.</p>
-            <input ref={input} type="file" multiple accept=".pdf,.zip,image/*" className="sr-only" onChange={(e) => pick(e.target.files)} />
+            <div className="mt-4 text-[17px] font-semibold">Drop PDFs, images, videos or a ZIP here</div>
+            <p className="mt-2 text-[15px] text-muted">
+              Scans are read with Gemini OCR; videos are transcribed, with on-screen text. Up to 10 MB per document and 100 MB per video; ZIPs are expanded.
+            </p>
+            <input
+              ref={input}
+              type="file"
+              multiple
+              accept={UPLOAD_EXTENSIONS.map((x) => `.${x}`).join(',')}
+              className="sr-only"
+              onChange={(e) => {
+                pick(e.target.files);
+                e.target.value = ''; // so choosing the same file again still fires
+              }}
+            />
             <Button variant="secondary" className="mt-5" onClick={() => input.current?.click()}>
               Choose files
             </Button>
@@ -407,7 +466,7 @@ function AddSource({
         )}
 
         <Button type="submit" className="mt-6" disabled={!consent || busy}>
-          {busy ? (tab === 'upload' ? 'Uploading…' : 'Connecting…') : tab === 'upload' ? 'Upload and process' : 'Connect and import'}
+          {busy ? (tab === 'upload' ? `Uploading…${progress !== null ? ` ${progress}%` : ''}` : 'Connecting…') : tab === 'upload' ? 'Upload and process' : 'Connect and import'}
         </Button>
       </form>
     </Card>

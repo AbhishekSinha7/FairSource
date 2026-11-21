@@ -44,6 +44,26 @@ def test_unexpected_errors_return_500_and_are_logged():
 # ----------------------------------------------------------------- GeminiAI
 
 
+class FakeFiles:
+    """Files API stand-in: the upload is PROCESSING once, then ACTIVE (or FAILED)."""
+
+    def __init__(self, end_state=types.FileState.ACTIVE):
+        self.end_state = end_state
+        self.deleted = []
+        self.polls = 0
+
+    def upload(self, file, config):
+        assert config.mime_type == "video/mp4" and file.read(4) == b"\x00\x00\x00\x18"
+        return SimpleNamespace(name="files/abc", uri="https://gemini/files/abc", state=types.FileState.PROCESSING)
+
+    def get(self, name):
+        self.polls += 1
+        return SimpleNamespace(name=name, uri="https://gemini/files/abc", state=self.end_state)
+
+    def delete(self, name):
+        self.deleted.append(name)
+
+
 class FakeModels:
     def __init__(self, replies):
         self.replies = list(replies)
@@ -159,3 +179,38 @@ def test_models_json_has_current_models():
     s = load_settings({"GOOGLE_CLOUD_PROJECT": "fs-dev"})
     assert "2.5" not in s.model_flash and "2.5" not in s.model_pro and "gemma-3" not in s.model_gemma
     assert s.model_fallback and s.model_fallback != s.model_flash
+
+
+def test_small_video_is_sent_inline_at_low_resolution():
+    ai, models = ai_with([SimpleNamespace(text="  बातमीचा मजकूर  ")])
+    assert ai.transcribe(b"\x00\x00\x00\x18ftyp", "video/mp4", "gs://b/v.mp4") == "बातमीचा मजकूर"
+    kw = models.requests[0][1]
+    assert kw["contents"][0].inline_data.mime_type == "video/mp4"
+    assert kw["config"].media_resolution == types.MediaResolution.MEDIA_RESOLUTION_LOW
+
+
+def test_big_video_goes_through_the_files_api_and_is_deleted_after():
+    from worker import ai as ai_mod
+
+    ai, models = ai_with([SimpleNamespace(text="transcript")])
+    files = FakeFiles()
+    ai.client.files = files
+    big = b"\x00\x00\x00\x18" + b"\x00" * ai_mod.INLINE_MEDIA_BYTES
+    assert ai.transcribe(big, "video/mp4", "gs://b/v.mp4") == "transcript"
+    assert models.requests[0][1]["contents"][0].file_data.file_uri == "https://gemini/files/abc"
+    assert files.polls == 1 and files.deleted == ["files/abc"]
+
+
+def test_video_gemini_cannot_read_is_permanent():
+    from worker import ai as ai_mod
+
+    ai, _ = ai_with([])
+    ai.client.files = FakeFiles(end_state=types.FileState.FAILED)
+    with pytest.raises(PermanentError) as e:
+        ai.transcribe(b"\x00\x00\x00\x18" + b"\x00" * ai_mod.INLINE_MEDIA_BYTES, "video/mp4", "gs://b/v.mp4")
+    assert e.value.code == "video_unreadable"
+
+
+def test_silent_video_returns_no_text():
+    ai, _ = ai_with([SimpleNamespace(text="NO_TEXT")])
+    assert ai.transcribe(b"x", "video/webm", "gs://b/v.webm") == ""

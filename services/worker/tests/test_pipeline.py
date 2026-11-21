@@ -208,3 +208,22 @@ def test_no_active_licence_means_chunks_carry_no_rights():
     first_version(h)
     c = h.store.chunks_of(DOC)[0]
     assert c["uses"] == [] and c["territories"] == [] and c["licenceId"] == ""
+
+
+def test_video_is_transcribed_and_processed_like_an_article():
+    h = Harness()
+    h.stub(DOC, "", sourceUrl=None, canonicalUrl=None, identityKey="upload:v", title="metro-update")
+    out = run(h, h.message(DOC, b"\x00\x00\x00\x18ftypmp42", mime="video/mp4", url=None))
+    assert out.status == "processed"
+    assert "transcribe:video/mp4" in h.ai.calls and not any(c.startswith("ocr") for c in h.ai.calls)
+    doc = h.store.documents[DOC]
+    assert doc["servable"] is True
+    assert h.blobs.read_json(doc["cleanUri"])["extraction"] == "transcript"
+    assert "speech" in h.ai.last_hints["Input"]  # the cleaner is told how to read a transcript
+
+
+def test_silent_video_has_no_text():
+    h = Harness()
+    h.ai.transcript = ""
+    h.stub(DOC, "", sourceUrl=None, canonicalUrl=None, identityKey="upload:v", title="b-roll")
+    assert run(h, h.message(DOC, b"\x1aE\xdf\xa3", mime="video/webm", url=None)).reason == "no_text"

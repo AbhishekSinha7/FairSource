@@ -214,6 +214,7 @@ All seven screens are built in `web/` and run on demo data:
 | --- | --- |
 | A PDF is **one document**, OCR'd in 10-page parts (up to 300 pages) | The plan made each 10-page part its own message, which would turn one book into several documents with separate earnings and titles |
 | OCR sends the file inline, not as a `gs://` URI | Works with both an AI Studio key (development) and Vertex AI (production); files are at most 10 MB |
+| Videos are transcribed by Gemini (decision 23) | |
 | Local language check uses scripts and marker words, not fastText | fastText needs a native build on Windows and a model file; this check catches the mistakes that matter (wrong script, Marathi vs Hindi) and has no opinion otherwise. It can be swapped for fastText later behind `language_agrees()` |
 | Duplicates only within the same publisher, and only "same article", not "same event" | Two papers covering one event are both legitimate; a cross-publisher "duplicate" would move one publisher's earnings to another |
 | SimHash over word 3-shingles, 4 × 16-bit bands, Gemma asked only for the 3 closest candidates within 8 bits | Keeps Gemma calls near zero for normal articles |
@@ -323,7 +324,7 @@ The dashboard can also run on a PC against the deployed services: `web/.env.loca
 
 ### 21. One address for everything (20 Nov)
 
-Firebase Hosting (`firebase.json`) puts the dashboard, API and MCP server on one address, `https://<project>.web.app`: `/v1/**` goes to `api`, `/mcp` to `mcp`, everything else (dashboard, `/docs`, `/openapi.json`) to `web`. `infra/deploy.sh` publishes it at the end (`HOSTING=1`, the default; `PUBLIC_URL` to override). For a nicer name, `HOSTING_SITE=fairsource` creates an extra Hosting site and serves everything at `https://fairsource.web.app` instead (site names are unique across Firebase; this one had no site on 20 Nov). An extra site's domain must be added once to Firebase Auth's authorized domains. Free, HTTPS, CDN, custom domain possible later, and `web.app` is already authorized for Google sign-in.
+Firebase Hosting (`firebase.json`) puts the dashboard, API and MCP server on one address, `https://<project>.web.app`: `/v1/**` goes to `api`, `/mcp` to `mcp`, everything else (dashboard, `/docs`, `/openapi.json`) to `web`. `infra/deploy.sh` publishes it at the end (`HOSTING=1`, the default; `PUBLIC_URL` to override). For a nicer name, `HOSTING_SITE=fairsource` creates an extra Hosting site and serves everything at `https://fairsource.web.app` instead (site names are unique across Firebase; on 21 Nov `fairsource` turned out to be reserved by another project, so pick another name or keep the default). An extra site's domain must be added once to Firebase Auth's authorized domains. Free, HTTPS, CDN, custom domain possible later, and `web.app` is already authorized for Google sign-in.
 
 | Choice | Why |
 | --- | --- |
@@ -334,6 +335,37 @@ Firebase Hosting (`firebase.json`) puts the dashboard, API and MCP server on one
 
 **Checked locally:** the standalone dashboard with the shared address (redirects through a simulated Hosting request stay on `web.app`; direct and demo access unchanged; docs and MCP snippet show the shared URL), 69 tests passing (no-store headers, spec addresses). **Not yet run:** the real Firebase Hosting deploy. Hosting needs a one-time `firebase login --no-localhost` in Cloud Shell if the deploy step asks for it.
 
+
+### 22. Judge access (21 Nov)
+
+Judges must be able to see and use the live app without the team linking each Google account first. With `JUDGE_ACCESS=1` on the `web` service (`JUDGE_ACCESS=1 bash infra/deploy.sh`), anyone who signs in with Google and isn't linked to an organisation chooses a side:
+
+| Choice | Why |
+| --- | --- |
+| **Publisher** joins the demo publisher (`JUDGE_PUBLISHER_ORG`, default `ORG_ID` = `pub_example`) | Judges see real processed content, the licence and earnings straight away; an empty publisher would show nothing |
+| **AI buyer** gets their own buyer organisation `buy_judge_<hash of uid>` (pilot quota 2M tokens a month) | Each judge's API keys, Playground calls and usage are their own; their queries pay the demo publisher, so the earnings screen moves |
+| Claims carry `judge: true`; judges switch sides by signing out and in again. Accounts linked with `create-org.ts` never see the choice | The team's own accounts behave exactly as before |
+| Off by default; after judging run `npx tsx infra/create-org.ts --project <id> --unlink-judges` and set `JUDGE_ACCESS=0` | Removes every judge's role and signs them out; buyer sandboxes and the ledger stay, so earnings history is unchanged |
+| The choice is made in the existing session route (`choose_role` → link → `refresh_token` → session) | No new public route; the claims are set server side with the dashboard's existing `firebaseauth.admin` role |
+
+**Known trade-off:** while it is on, any Google account can change the demo publisher's licence, sources and opt-outs. Acceptable for judging; use a separate `JUDGE_PUBLISHER_ORG` if that matters.
+
+**Checked locally:** types, and the rules for who gets the choice. **Not yet run:** the live sign-in flow on `ask123`.
+
+### 23. Video uploads (21 Nov)
+
+Publishers with news video (TV, YouTube channels, reels) can upload MP4, MOV, WebM or MPEG files. Gemini transcribes them and the transcript is handled like any article: cleaned, checked, chunked, licensed and metered.
+
+| Choice | Why |
+| --- | --- |
+| Up to **100 MB per video** (`MAX_VIDEO_BYTES`), 10 MB per document as before; ingest also checks the size of what actually arrived | Video is much bigger than text; a signed upload URL can't cap the size itself |
+| One Gemini call (`transcribe`, Flash) returns the speech word for word in its own language, plus `[On screen: ...]` lines for captions and headlines; no timestamps | Captions often carry facts the speaker doesn't say (names, figures, places) |
+| `media_resolution` low | The words matter, not the pixels; far fewer tokens per second of video |
+| Videos up to 18 MB go inline; bigger ones through the Gemini Files API (deleted after use) or, on Vertex AI, straight from `gs://` | Gemini's inline limit is 20 MB per request |
+| The cleaner is told it is reading a transcript: the body is the speech, and `language` is the language of the speech | Without it, a video with Marathi captions and English speech was labelled Marathi, failed the language check and was held for review (seen in testing) |
+| Silent video with no text fails with `no_text`; a file Gemini can't read fails with `video_unreadable` | Same rules as scans |
+
+**Checked:** 46 worker tests and 31 ingest tests (inline and Files API routes, file deleted after use, unreadable and silent videos, size limits, raw files saved as `.mp4`), and with real Gemini on `eval/demo/demo-news-bulletin.webm`: transcript and every caption correct through both routes (the Files API route took 23 s), processed as English news and servable. **Not yet run:** a video through the deployed upload flow.
 ---
 
 ## Repository layout

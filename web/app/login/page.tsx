@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 import { DataModeSwitch } from '@/components/DataModeSwitch';
 import { LIVE_CONFIGURED } from '@/lib/server/env';
+import { JUDGE_ACCESS } from '@/lib/server/judge';
 import { isLiveMode, modeSwitchAvailable } from '@/lib/server/mode';
 import { currentSession } from '@/lib/server/session';
 import { LoginButton } from './LoginButton';
@@ -33,7 +34,11 @@ export default async function LoginPage() {
         {LIVE_CONFIGURED ? (
           <>
             <h1 className="mt-8 font-display text-2xl font-semibold">Sign in</h1>
-            <p className="mt-2 text-[15px] text-muted">Publishers and AI buyers sign in with the Google account the FairSource team linked to their organisation.</p>
+            <p className="mt-2 text-[15px] text-muted">
+              {JUDGE_ACCESS
+                ? 'Sign in with any Google account, then explore FairSource as a publisher or as an AI buyer.'
+                : 'Publishers and AI buyers sign in with the Google account the FairSource team linked to their organisation.'}
+            </p>
             <LoginButton
               config={{
                 apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? '',

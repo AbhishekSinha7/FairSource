@@ -9,7 +9,7 @@ from typing import Any, Callable, Optional
 
 from .config import Settings
 from .errors import PermanentError, RetryableError
-from .extract import HTML_TYPES, IMAGE_TYPES, PDF, Extracted, extract_html, split_pdf
+from .extract import HTML_TYPES, IMAGE_TYPES, VIDEO_TYPES, PDF, Extracted, extract_html, split_pdf
 from .models import CleanResult, ContentProcessedMessage, ContentRawMessage, chunk_id_for
 from .ports import AI, Blobs, Bus, Store
 from .textutil import bands, hamming, language_agrees, personal_data_count, plan_chunks, sha256_text, simhash64
@@ -67,6 +67,15 @@ def process(msg: ContentRawMessage, d: Deps) -> Outcome:
         return Outcome("failed", e.code)
 
 
+# Without this, a video with captions in one language and speech in another gets the
+# captions' language, fails the language check and is held for review.
+VIDEO_HINT = (
+    "a video transcript. Lines marked [On screen: ...] are captions shown in the video; the rest is speech. "
+    "The body is the speech; keep facts that appear only on screen. Set language and script to those of the "
+    "speech (of the on-screen text if nothing is said)."
+)
+
+
 def _extract(msg: ContentRawMessage, raw: bytes, d: Deps) -> Extracted:
     s = d.settings
     mime = msg.mimeType.split(";")[0].strip().lower()
@@ -77,6 +86,8 @@ def _extract(msg: ContentRawMessage, raw: bytes, d: Deps) -> Extracted:
         return Extracted("\n\n".join(d.ai.ocr(p, PDF).strip() for p in parts), pages=total, method="ocr")
     if mime in IMAGE_TYPES:
         return Extracted(d.ai.ocr(raw, mime).strip(), pages=1, method="ocr")
+    if mime in VIDEO_TYPES:
+        return Extracted(d.ai.transcribe(raw, mime, msg.rawUri).strip(), method="transcript")
     if mime == "text/plain":
         return Extracted(raw.decode("utf-8", errors="replace").strip(), method="text")
     raise PermanentError("unsupported_type", f"can't process {mime}")
@@ -111,6 +122,8 @@ def _process(msg: ContentRawMessage, doc: dict[str, Any], d: Deps) -> Outcome:
     # Step 4: clean and structure.
     hints = {"Source URL": msg.sourceUrl or "", "Feed or file title": str(doc.get("title") or "")}
     hints |= {f"Page {k}": v for k, v in ex.hints.items()}
+    if ex.method == "transcript":
+        hints["Input"] = VIDEO_HINT
     cleaned: CleanResult = d.ai.clean(ex.text[: s.max_input_chars], hints)
     body = cleaned.body.strip()
     title = " ".join(cleaned.title.split())
